@@ -1,0 +1,24 @@
+Streamer.xs
+Changes
+lib/Data/Dump/Streamer.pm
+lib/Data/Dump/Streamer/_/Printers.pm
+Makefile.PL
+MANIFEST			This list of files
+META.yml
+README
+t/blessed.t
+t/dogpound.t
+t/dump.t
+t/filter.t
+t/globtest.t
+t/hardrefs.t
+t/madness.t
+t/names.t
+t/readonly.t
+t/refaddr.t
+t/refcount.t
+t/refelem.t
+t/reftype.t
+t/sortkeys.t
+t/test_helper.pl
+t/tree.t

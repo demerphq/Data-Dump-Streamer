@@ -1,0 +1,78 @@
+NAME
+    Data::Dump::Streamer - Perl extension for breadth first accurate dumping of
+    data structures in perl code form.
+
+SYNOPSIS
+      use Data::Dump::Streamer;
+
+      Dump($x,$y);                       # Prints to STDOUT
+      Dump($x,$y)->Out();                #   "          "
+
+      my $s=Dump($x,$y);                 # Returns a string
+      my $s=Dump($x,$y)->Out();          #    "         "
+
+      my @l=Dump($x,$y);                 # List of code fragments
+      my @l=Dump($x,$y)->Out();          # List of code fragments
+
+      my $o=Data::Dump::Streamer->new(); # New Data::Dump::Streamer obj
+      my $o=Dump();                      # same;
+
+      Dump($x,$y)->To(\*STDERR)->Out();  # Prints to STDERR
+
+      Dump($x,$y)->Names('foo','bar')
+                 ->Out();                # Specify Names
+
+      Dump($x,$y)->Indent(0)->Out();     # No indent
+
+      Dump($x,$y)->To(\*STDERR)          # Output to STDERR
+                 ->Indent(0)             # ... no indent
+                 ->Names('foo','bar')    # ... specify Names
+                 ->Out();                # Print...
+
+      $o->Data($x,$y);                   # Object form
+      $o->Names('Foo','Names');          #  ...
+      $o->Out();                         #  ...
+
+INSTALLATION
+    To install this module type the following:
+
+      perl Makefile.PL
+      make
+      make test
+      make install
+
+    On Win32 systems change make to nmake or dmake as appropriate.
+
+    The modules requires a functional C compiler, however PPM support
+    for Win32 users will also be available sometime soon.
+
+    It is known to work correctly on Perl 5.6 and later on both Win32
+    and *nix operating systems.
+
+DEPENDENCIES
+    This module requires these other modules and libraries:
+
+      Text::Balanced
+      Test::More
+
+    and optionally for enhanced testing
+
+      Algortihm::Diff
+
+    All other dependencies are part of the standard distribution as
+    of Perl 5.6.
+
+AUTHOR AND COPYRIGHT
+    Yves Orton, <demerphq@hotmail.com>
+
+    Copyright (C) 2003 Yves Orton  2003
+
+    This library is free software; you can redistribute it and/or
+    modify it under the same terms as Perl itself.
+
+    Contains code derived from works by Gisle Aas, Graham Barr,
+    Jeff Pinyan, Richard Clamp, and Gurusamy Sarathy.
+
+SEE ALSO
+    perl.
+
