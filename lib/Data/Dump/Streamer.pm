@@ -9,6 +9,9 @@ use B::Deparse;
 use IO::File;
 use Data::Dumper ();
 use Data::Dump::Streamer::_::Printers;
+use Symbol;
+use warnings;
+use warnings::register;
 
 #local $Data::Dumper::Sortkeys=1;
 #local $Data::Dumper::Useperl=1;
@@ -19,7 +22,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $VERSION $XS_VERSION $DEBUG $AU
 $DEBUG=0;
 
 BEGIN {
-    $VERSION   ='1.03';
+    $VERSION   ='1.04';
     $XS_VERSION='1.0';
     @ISA       = qw(Exporter DynaLoader);
 
@@ -304,7 +307,6 @@ sub new {
             verbose      => 1,         # use long names and detailed fill ins
             dumpglob     => 1,         # dump glob contents
             deparseglob  => 1,
-            deparseformat=> 1,
             deparse      => 1,         # deparse code refs?
             freeze       => '',        # default freezer
             thaw         => '',        # default thaw
@@ -317,6 +319,7 @@ sub new {
 
             # use this if deparse is 0
             codestub     => 'sub { Carp::confess "Dumped code stub!" }',
+            formatstub   => 'do{ local *F; eval "format F =\nFormat Stub\n.\n"; *F{FORMAT} }',
             # use these opts if deparse is 1
             deparseopts  => ["-sCi2v'Useless const omitted'"],
             special     =>0,
@@ -736,7 +739,10 @@ sub _add_queue {
         local @_;
         foreach my $t (qw(SCALAR HASH ARRAY),
             ($self->{style}{deparse} && $self->{style}{deparseglob}
-            ? 'CODE' : () )) {
+            ? 'CODE' : () ),
+            ($self->{style}{deparse} && $self->{style}{deparseglob}
+            ? 'FORMAT' : () )
+            ) {
 
             #warn $type.":$t\n";
             #register?
@@ -999,9 +1005,10 @@ sub _apply_fix {
 
                 my $gaddr=refaddr(*$lhs{$t});
                 my $gidx=$self->{ref}{$gaddr};
-                if ($self->{refd}[$gidx]<$depth+1) {
+                unless ($gidx) {
+                    next
+                } elsif ($self->{refd}[$gidx]<$depth+1) {
                     $self->_add_fix('ref',$name,$gidx,blessed(*$lhs{$t}));
-
                     next;
                 }
 
@@ -1013,7 +1020,7 @@ sub _apply_fix {
                 $self->{fh}->print(";\n");
                 $dumped=1;
             }
-            if ($self->{style}{deparse} && $self->{style}{deparseformat}
+            if ($self->{style}{deparse} && $self->{style}{deparseglob}
                 #and defined *$lhs{FORMAT}
             ) {
                 # from link from [ysth]: http://groups.google.com/groups?selm=laUs8gzkgOlT092yn%40efn.org
@@ -1601,6 +1608,19 @@ sub _dump_array {
     return
 }
 
+sub __vstr {
+    my ($v,@v);
+    unless (@_) {
+        $v=$];
+    } elsif (@_==1) {
+        $v=shift;
+    } else {
+        @v=@_;
+    }
+    return join ".", @v ? (@v,(0) x 3)[0..2]
+                        : map { $v * 1000**$_ % 1000 } 0..2
+}
+
 sub _dump_code {
     my ($self,$item,$name,$indent,$class)=@_;
     unless ($self->{style}{deparse}) {
@@ -1619,7 +1639,9 @@ sub _dump_code {
                 $bless='CODE';
                 redo DEPARSE;
             } elsif ($@) {
-                Carp::confess "Failed to deparse!: $@";
+                warnings::warnif "Using CODE stub for $name as B::Deparse->coderef2text (v$B::Deparse::VERSION on v@{[__vstr]}) failed. Message was:\n $@";
+                $self->{fh}->print($self->{style}{codestub});
+                return;
             }
         }
         #$code=~s/^\s*(\([^)]+\)|)\s*/sub$1\n/;
@@ -1641,18 +1663,37 @@ sub _dump_format {
     # translate arg (or reference to it) into a B::* object
     my ($self,$item,$name,$indent)=@_;
 
-    my $Bobj = B::svref_2object($item);
-    # if passed a glob or globref, get the format
-    $Bobj = B::GV::FORM($Bobj) if ref $Bobj eq 'B::GV';
-    if (ref $Bobj eq 'B::FM') {
-        my $deparser = B::Deparse::->new();
-        my $format=$deparser->indent($deparser->deparse_format($Bobj));
-        my $end='_EOF_FORMAT_';
-        $end=~s/T(\d*)_/sprintf "T%02d_",($1||0)+1/e
-                while $format=~/$end/;
-        my $ind=$self->{style}{indent} ? ' ' x $indent : '';
-        $self->{fh}->print("do{ local *F;\n${ind}eval <<'$end'\nformat F =\n$format\n$end\n$ind*F{FORMAT} }");
+
+    if ($self->{style}{deparse}) {
+        my $Bobj = B::svref_2object($item);
+        # if passed a glob or globref, get the format
+        $Bobj = B::GV::FORM($Bobj) if ref $Bobj eq 'B::GV';
+        if (ref $Bobj eq 'B::FM') {
+            my $format;
+            eval {
+              my $deparser = B::Deparse::->new();
+              $format=$deparser->indent($deparser->deparse_format($Bobj));
+            };
+            if ($@) {
+                warnings::warnif "B::Deparse (v$B::Deparse::VERSION on v@{[__vstr]}) failed FORMAT ref deparse.\n";
+                $format="B::Deparse (v$B::Deparse::VERSION on v@{[__vstr]}) failed FORMAT ref deparse.\n.\n";
+            }
+            my $ind=$self->{style}{indent} ? ' ' x $indent : '';
+            $format="format F =\n$format";
+            $format=~s/^/${ind}# /gm;
+
+            my $end='_EOF_FORMAT_';
+            $end=~s/T(\d*)_/sprintf "T%02d_",($1||0)+1/e
+                    while $format=~/$end/;
+
+            $self->{fh}->print("do{ local *F; my \$F=<<'$end'; \$F=~s/^\\s+# //mg; eval \$F; die \$F.\$@ if \$@; *F{FORMAT};\n$format\n$end\n$ind}");
+            return
+        }
     }
+
+    $self->{fh}->print($self->{style}{formatstub});
+
+
 }
 
 sub _dump_symbol {
@@ -2037,21 +2078,22 @@ and blessable.
 
 Defaults to 'sub { Carp::confess "Dumped code stub!" }'
 
+=item FormatStub
+
+=item FormatStub STRING
+
+If Deparse is False then this string will be used in place of FORMAT
+references. Its the users responsibility to make sure its compilable
+and blessable.
+
+Defaults to 'do{ local *F; eval "format F =\nFormat Stub\n.\n"; *F{FORMAT} }'
+
 =item DeparseGlob
 
 =item DeparseGlob BOOL
 
 If Deparse is True then this style attribute will determine if subroutines
-contained in globs that are dumped will be deparsed or not.
-
-Defaults to True.
-
-=item DeparseFormat
-
-=item DeparseFormat BOOL
-
-If Deparse is True then this style attribute will determine if subroutines
-contained in globs that are dumped will be deparsed or not.
+and FORMAT's contained in globs that are dumped will be deparsed or not.
 
 Defaults to True.
 
@@ -2175,8 +2217,8 @@ sub Verbose     {}
 sub DumpGlob    {}
 sub Deparse     {}
 sub CodeStub    {}
+sub FormatStub  {}
 sub DeparseGlob {}
-sub DeparseFormat {}
 sub Rle         {}
 sub Freeze      {}
 sub Thaw        {}
@@ -2247,8 +2289,10 @@ sub HashKeys {
 }
 *Hashkeys=*HashKeys;
 
-my %scalar_meth=map{ $_ => lc($_)} qw(Declare Indent IndentCols SortKeys Sortkeys IndentKeys
-        Verbose DumpGlob Deparse DeparseGlob DeparseFormat CodeStub Rle Freeze Thaw);
+my %scalar_meth=map{ $_ => lc($_)}
+      qw(Declare Indent IndentCols SortKeys Sortkeys IndentKeys
+        Verbose DumpGlob Deparse DeparseGlob DeparseFormat CodeStub
+        FormatStub Rle Freeze Thaw);
 my %hash_meth=map {$_ => lc($_)} qw(FreezeClass ThawClass IgnoreClass);
 
 sub AUTOLOAD {

@@ -1,19 +1,33 @@
 1.0
 
-Release version. Name changed to Data::Dump::Streamer which will be future name.
+Release version. Name changed to Data::Dump::Streamer which will be
+future name.
 
 1.01
 
-Post-release minor fix to provide SortKeys and Hashkeys aliases to SortKeys
-and HashKeys. Thanks to Slaven Rezic for the heads up. Added documentation
-improvements and fixes as well as a very slight and subtle change to the
-behaviour of Dump() in list context.
+Post-release minor fix to provide SortKeys and Hashkeys aliases to
+both SortKeys and HashKeys. Thanks to Slaven Rezic for the heads up.
+Added documentation improvements and fixes as well as a very slight
+and subtle change to the behaviour of Dump() in list context.
 
 1.02
 
-Changed test 14 of dump.t, added a few tests, and some support code for
-future enhancements, and most notably support for deparsing formats. Thanks
-to Yitzchak Scott-Thoennes for the latter.
+Changed test 14 of dump.t, added a few tests, and some support code
+for future enhancements, and most notably support for deparsing
+formats. Thanks to Yitzchak Scott-Thoennes for the latter.
+
+1.03, 1.04
+
+Enhanced format support for FORMAT refs. Yitzchak pointed out some
+bugs in the original handling. DeparseFormat() has been removed. It
+should never have existed in the first place. DeparseGlob() was the
+correct method/attribute to use. FormatStub() attribute added.
+
+This release I'm introducing some new testing code that im trying out.
+Once im happy with it I intend to convert all my old tests to use it
+and do away with the really quite horrible same() and _same() in
+test_helper.pl.
+
 
 
 
