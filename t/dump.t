@@ -1,4 +1,4 @@
-use Test::More tests => 30;
+use Test::More tests => 31;
 use lib './lib';
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump) ); }
 use strict;
@@ -364,7 +364,15 @@ EXPECT
 $VAR1 = "\x{100}\x{101}\x{102}";
 EXPECT
 }
-
+{
+    use warnings FATAL=>'all';
+    my $r = "Günter";
+    test_dump( {name=>"Non unicode, high char",
+                no_dumper=>1,verbose=>1}, $o, ( $r ),
+               <<'EXPECT',  );
+$VAR1 = "G\374nter";
+EXPECT
+}
 __END__
 # with eval testing
 {

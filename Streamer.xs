@@ -810,7 +810,7 @@ hidden_keys(hash)
         HE *he;
     PPCODE:
 	if (!SvROK(hash) || SvTYPE(SvRV(hash)) != SVt_PVHV)
-	   croak("First argument to all_keys() must be an HASH reference");
+	   croak("First argument to hidden_keys() must be an HASH reference");
 
 	hv = (HV*)SvRV(hash);
 
@@ -832,7 +832,7 @@ legal_keys(hash)
         HE *he;
     PPCODE:
 	if (!SvROK(hash) || SvTYPE(SvRV(hash)) != SVt_PVHV)
-	   croak("First argument to all_keys() must be an HASH reference");
+	   croak("First argument to legal_keys() must be an HASH reference");
 
 	hv = (HV*)SvRV(hash);
 
