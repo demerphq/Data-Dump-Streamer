@@ -54,7 +54,15 @@ EXPECT
 		$g = 'a string';
 		@g = qw/a list/;
 		%g = qw/a hash/;
-		same( scalar $o->Data(*g)->Out, <<'EXPECT', "data slots", $o );
+		our ($off,$width,$bits,$val,$res);
+		($off,$width,$bits,$val,$res)=($off,$width,$bits,$val,$res);
+		eval'
+		format g =
+vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+$off, $width, $bits, $val, $res
+.
+';
+		same( scalar $o->Data(*g)->Out, <<'EXPECT', "data slots (FORMAT)", $o );
 $VAR1 = *::g;
 *::g = \do { my $v = 'a string' };
 *::g = { a => 'hash' };
@@ -62,7 +70,9 @@ $VAR1 = *::g;
          'a',
          'list'
        ];
-
+format g = vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+$off, $width, $bits, $val, $res
+.
 EXPECT
 	}
 

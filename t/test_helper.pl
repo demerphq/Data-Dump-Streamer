@@ -133,24 +133,58 @@ sub same {
     goto &_same unless ref( $_[1] );
     my $name   = shift;
     my $obj    = shift;
+    #my $switch = ref ($_[0]) ? shift : undef;
     my $expect = shift;
-
     my $result = $obj->Data(@_)
                      #->diag()
                      ->Out();
-    #$obj->diag;
+
 
     $result=~s/^\s*use.*\n//gm;
-    my @declare=grep { /^[\$\@\%]/ } @{$obj->{declare}};
-    my @dump   =map  { /^[\@\%\&]/ ? "\\$_" : $_  } @{$obj->{out_names}};
 
+    my $main_pass;
+
+    {
+        my $r=$result;
+        my $e=$expect;
+
+        s/\s+$//gm for $r,$e;
+        s/\r\n/\n/g for $r,$e;
+        s/\(0x[0-9a-xA-X]+\)/(0xdeadbeef)/g for $r,$e;
+
+        #warn "@vars";
+        $main_pass="\n" . $r eq "\n" . $e;
+
+        unless ( $main_pass ) {
+            if ( $e =~ /\S/ ) {
+                eval {
+                    print string_diff( "\n" . $e, "\n" . $r, "Expected", "Result" );
+                    print "$name Got:\n" . $r . "\nEXPECT\n";
+                  }
+                  or do {
+                    print "$name Expected:\n$e\nGot:\n$r\n";
+                  }
+            } else {
+                print $r, "\n";
+            }
+            $obj->diag;
+        }
+    }
+
+
+    my @declare=grep { /^[\$\@\%]/ } @{$obj->{declare}};
+
+    my @dump   =map  { /^[\@\%\&]/ ? "\\$_" : $_  } @{$obj->{out_names}};
+    my $dumpvars=join ( ",", @dump );
+
+    print $result,"\n" if $name=~/Test/;
 
     my ($dumper,$error) = _dumper(\@_);
     if ($error) {
         diag( "$name\n$error" );
     }
     if ($dumper) {
-        my $dumpvars=join ( ",", @dump );
+
         my $result2_eval = $result . "\n" . 'scalar( $obj->Data(' . $dumpvars . ")->Out())\n";
         my $dd_result_eval =
           $result . "\nscalar(Data::Dumper->new("
@@ -161,14 +195,14 @@ sub same {
             $dd_result_eval = "my(" . join ( ",", @declare ) . ");\n" . $dd_result_eval;
             $result2_eval   = "my(" . join ( ",", @declare ) . ");\n" . $result2_eval;
         }
-        foreach my $test ( [ "Dumper", $dd_result_eval, $dumper ], [ "Precise::Dump", $result2_eval, $result ] ) {
+        foreach my $test ( [ "Dumper", $dd_result_eval, $dumper ], [ "Streamer", $result2_eval, $result ] ) {
             my ( $test_name, $eval, $orig ) = @$test;
 
             my ($warned,$res);
             {
                 local $SIG{__WARN__}=sub { my $err=join ('',@_); $warned.=$err unless $err=~/^Subroutine|Encountered/};
                 $res  = eval $eval;
-                if ($warned) { print "Eval produced warnings:$warned\n$eval" };
+                if ($warned) { print "Eval $test_name produced warnings:$warned\n$eval" };
             }
             $res=~s/^\s*use.*\n//gm;
             my $fail = 0;
@@ -184,26 +218,8 @@ sub same {
             $obj->diag if $fail;
             return fail($name) if $fail;
         }
-
         #print join "\n",$result,$result2,$dumper,$dd_result,"";
     }
-    s/\s+$//gm for $result,                          $expect;
-    s/\r\n/\n/g for $result,                         $expect;
-    s/\(0x[0-9a-xA-X]+\)/(0xdeadbeef)/g for $result, $expect;
+    ok( $main_pass, $name )
 
-    #warn "@vars";
-    unless ( ok( "\n" . $result eq "\n" . $expect, $name ) ) {
-        if ( $expect =~ /\S/ ) {
-            eval {
-                print string_diff( "\n" . $expect, "\n" . $result, "Expected", "Result" );
-                print "$name Got:\n" . $result . "\nEXPECT\n";
-              }
-              or do {
-                print "$name Expected:\n$expect\nGot:\n$result\n";
-              }
-        } else {
-            print $result, "\n";
-        }
-        $obj->diag;
-    }
 }

@@ -9,7 +9,11 @@ and HashKeys. Thanks to Slaven Rezic for the heads up. Added documentation
 improvements and fixes as well as a very slight and subtle change to the
 behaviour of Dump() in list context.
 
+1.02
 
+Changed test 14 of dump.t, added a few tests, and some support code for
+future enhancements, and most notably support for deparsing formats. Thanks
+to Yitzchak Scott-Thoennes for the latter.
 
 
 
