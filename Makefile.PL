@@ -1,14 +1,7 @@
 sub DDS {
     (my $text=<<'EOF_DDS')=~s/^#//gm; return $text;
-#    package DDS;
-#
-#use Data::Dump::Streamer qw(:all);
-#@ISA=qw(Data::Dump::Streamer);
-#sub import {
-#    my $r=shift;
-#    unshift @_,'Data::Dump::Streamer';
-#    goto &{Data::Dump::Streamer->can('import')};
-#}
+##This all has to be one line for MakeMaker version scanning.
+#use Data::Dump::Streamer (); BEGIN{ *DDS:: = \%Data::Dump::Streamer:: } $VERSION=$DDS::VERSION;
 #1;
 #
 #=head1 NAME
@@ -17,7 +10,7 @@ sub DDS {
 #
 #=head1 SYNOPSIS
 #
-#  perl -MDDS -e "Dump [qw(foo bar)]"
+#  perl -MDDS -e "Dump \%INC"
 #
 #  use DDS;
 #
@@ -27,21 +20,25 @@ sub DDS {
 #
 #
 #=cut
+#
 EOF_DDS
 }
 BEGIN {
     print "******************************************************\n";
     print "*** This is  Data::Dump::Streamer. Enjoy!          ***\n";
-    if ($ARGV[0] eq 'DDS') {
+    if ($ARGV[0] eq 'DDS' or (-e "./lib/DDS.pm" and $ARGV[0] ne 'NODDS') )
+    {
         print "***------------------------------------------------***\n";
         print "*** Will also install DDS as an alias.             ***\n";
+        print "*** Use 'perl Makefile.Pl NODDS' to disable this   ***\n";
         print "******************************************************\n";
         open my $ofh,">","./lib/DDS.pm" or die "Failed to open ./lib/DDS.pm:$!";
         print $ofh DDS();
         close $ofh;
-        @opts=(clean => { FILES => './lib/DDS.pm' });
+        @opts=(realclean => { FILES => './lib/DDS.pm' });
         shift;
     } else {
+        shift if $ARGV[0] ne 'NODDS';
         print "***------------------------------------------------***\n";
         print "*** use 'perl Makefile.PL DDS [STANDARD OPTS]'     ***\n";
         print "*** to have a shortcut to Data::Dump::Streamer     ***\n";
