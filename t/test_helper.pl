@@ -1,16 +1,19 @@
 use strict;
 use warnings;
-require Test::More;
+use Test::More;
+use Algorithm::Diff qw(sdiff diff);
 
-# my own version of Text::Diff. :-) This should be removed to depend on that module
+# all of this is acumulated junk used for making the various test easier.
+# as a close inspection shows, this all derives from different periods of
+# the module and is pretty nasty/hacky to look at. Slowly id like to convert
+# everything over to test_dump() and get rid of same().
+
 sub string_diff {
     my ( $str1, $str2, $title1, $title2 ) = @_;
     $title1 ||= "Got";
     $title2 ||= "Expected";
 
     my $line = ( caller(2) )[2];
-
-    require Algorithm::Diff;
 
     #print $str1,"\n---\n",$str2;
     my $seq1 = ( ref $str1 ) ? $str1 : [ split /\n/, $str1 ];
@@ -105,6 +108,7 @@ sub _dumper {
         local $SIG{__WARN__}=sub { my $err=join ('',@_); $warned.=$err unless $err=~/^Subroutine|Encountered/};
         $dump=eval { scalar Data::Dumper->new( $todump )->Purity(1)->Sortkeys(1)->Quotekeys(1)->Useperl($use_perl)->Dump() };
         unless ($@) {
+            normalize($dump);
             return ($dump,$error.$warned);
         }else {
             unless ($version) {
@@ -129,18 +133,36 @@ sub _dumper {
 }
 }
 
+sub vstr {Data::Dump::Streamer::__vstr(@_)}
+
+sub normalize {
+    my @x=@_;
+    foreach (@x) {
+        #warn "<before>\n$_</before>\n";
+        s/^\s*use.*\n//gm;
+        s/^\s*BEGIN\s*\{.*\}\n//gm;
+        s/\A(?:\s*(?:#\*\.*)?\n)+//g;
+        if (/^\s+(#\s*)/) {
+            my $ind=$1;
+            s/^\s+$ind//gm;
+        }
+        s/\(0x[0-9a-fA-F]+\)/(0xdeadbeef)/g;
+        s/\r\n/\n/g;
+        s/\s+$//gm;
+        $_.="\n";
+        #warn "<after>\n$_</after>\n";
+    }
+    unless (defined wantarray)  {
+        $_[$_-1]=$x[$_-1] for 1..@_;
+    }
+    wantarray ? @x : $x[0]
+}
+
 sub same {
     goto &_same unless ref( $_[1] );
     my $name   = shift;
     my $obj    = shift;
-    #my $switch = ref ($_[0]) ? shift : undef;
-    my $expect = shift;
-    my $result = $obj->Data(@_)
-                     #->diag()
-                     ->Out();
-
-
-    $result=~s/^\s*use.*\n//gm;
+    my ($expect,$result) = normalize(shift, scalar $obj->Data(@_)->Out());
 
     my $main_pass;
 
@@ -148,9 +170,6 @@ sub same {
         my $r=$result;
         my $e=$expect;
 
-        s/\s+$//gm for $r,$e;
-        s/\r\n/\n/g for $r,$e;
-        s/\(0x[0-9a-xA-X]+\)/(0xdeadbeef)/g for $r,$e;
 
         #warn "@vars";
         $main_pass="\n" . $r eq "\n" . $e;
@@ -181,7 +200,7 @@ sub same {
 
     my ($dumper,$error) = _dumper(\@_);
     if ($error) {
-        diag( "$name\n$error" ) if $ENV{USERNAME} eq 'demerphq' and $ENV{FULLTEST};
+        diag( "$name\n$error" ) if $ENV{TEST_VERBOSE};
     }
     if ($dumper) {
 
@@ -205,14 +224,14 @@ sub same {
                 $res  = eval $eval;
                 if ($warned) { print "Eval $test_name produced warnings:$warned\n$eval" };
             }
-            $res=~s/^\s*use.*\n//gm;
+            normalize($res);
             my $fail = 0;
             if ($@) {
                 print join "\n", "Failed $test_name eval()", $eval, $@, "";
                 $fail = 1;
             } elsif ( $res ne $orig ) {
                 print "Failed $test_name second time\n";
-                eval { print string_diff( $orig, $res, "Orig", "Result" ); };
+                eval { print string_diff( $orig, $res, "Orig", "Result" ) };
                 print "Orig:\n$orig\nResult:\n$res\nEval:\n$eval\n";
                 $fail = 1;
             }
@@ -222,5 +241,202 @@ sub same {
         #print join "\n",$result,$result2,$dumper,$dd_result,"";
     }
     ok( $main_pass, $name )
-
 }
+
+
+
+=pod
+
+test_dump(
+           "Name", $obj,
+           @vars,
+           $expect
+         )
+
+
+=cut
+
+my %Methods=(
+                'Data::Dumper'=>'->new(sub{\\@_}->(@_))'.
+                                '->Purity(1)->Sortkeys(1)'.
+                                '->Quotekeys(1)->Useperl(1)'.
+                                '->Dump()',
+                'Data::Dump::Streamer'=>'->Data(@_)->Out()',
+            );
+
+use constant NO_EVAL=>'';
+
+sub _dmp {
+    my $obj=shift;
+    my $eval=shift;
+
+    my $class=ref($obj) || $obj;
+    my $objname=ref($obj) ? '$obj' : $obj;
+
+    my @lines;
+    my $method=$Methods{$class};
+
+    if ($eval) {
+        return @$eval if @$eval!=1;
+        my ($names,$declare,%arg)=@_;
+
+        my @declare= grep { /^[\$\@\%]/ } @$declare;
+        my @to_dump= map  { /^[\@\%\&]/ ? "\\$_" : $_  } @$names;
+        my $decl=@$declare ? "my(" . join ( ",", @declare ) . ");" : "";
+
+        push @lines,$decl,$arg{pre_eval},$eval->[0],$arg{post_eval};
+        $method=~s/\(\@_\)/"(".join (", ",@to_dump).")"/ge;
+    }
+
+    push @lines,"normalize ( scalar $objname$method )";
+
+    my $eval_str=join ";\n",map { !$_ ? () : (s/[\s;]+\z//g || 1) && $_ } @lines;
+    #print "\n---\n",$eval_str,"\n---\n";
+    my $res;
+    {
+        my @w;
+        {
+            local $SIG{__WARN__}=sub { push @w,join "",@_; ""};
+            $res=eval $eval_str;
+        }
+        warn "Test $class$method produced warnings. Code:\n$eval_str\nWarnings:\n".join("\n",@w)."\n"
+            if @w;
+        return ($res,"$class$method failed dump:\n$eval_str\n$@")
+            if $@;
+    }
+    return ($res);
+}
+
+my %ldchar=(u=>'=','+'=>'+','-'=>'-','c'=>'!');
+my %mdchar=(u=>'|','+'=>'>','-'=>'<','c'=>'*');
+
+sub _my_diff {
+    my ($e,$g,$mode)=@_;
+
+    my @exp=split /\n/,$e;
+    my @got=split /\n/,$g;
+
+
+    my $line=0;
+    my $diff=0;
+    my $lw=length('Expected');
+    my $u=3;
+    my @buff;
+    my @lines=map{
+                  if ($_->[0]ne'u') {
+                    $diff=1;
+                    $u=0;
+                  } else {
+                    $u++;
+                  }
+                  $lw=length $_->[1] if $lw < length $_->[1];
+                  unshift @$_,$line++;
+                  if ($u<3) {
+                    my @r=$u==0 && @buff ? (@buff,$_) : ($_);
+                    @buff=() unless $u;
+                    @r
+                  } else {
+                    shift @buff if @buff>=2;
+                    push @buff,$_;
+                    ();
+                  }
+                 } sdiff(\@exp,\@got);
+    my $as_str=join("\n",
+                sprintf("%7s%*s%3s%s",'',-$lw,'Expected','','Result'),
+                map {
+                        sprintf "%4d %1s %*s %1s %s",
+                            $_->[0],$ldchar{$_->[1]},
+                            -$lw,$_->[2]||'',$mdchar{$_->[1]},
+                            $_->[3]||''
+                    } @lines)."\n";
+    return $diff ? $as_str : '';
+}
+
+sub _eq {
+    my ($exp,$res,$test,$name)=@_;
+    my ($exp_err,$res_err);
+    # if they are arrays then they from tests involving _dmp
+    # but if they are empty then the test isnt performed and
+    # we can forget it
+    return 1 if ref $exp and !@$exp or ref($res) and !@$res;
+    ($exp,$exp_err)=@$exp if ref $exp;
+    ($res,$res_err)=@$res if ref $res;
+    # the thing we are trying to compare against was a failure
+    # so assume we suceed. (or rather the test cant be counted)
+    return 1 if $exp_err;
+    # result was a failure
+    if ($res_err) {
+        if ($test->{verbose}) {
+            diag "Error:\n$test->{name} subtest $name:\n",$res_err;
+        }
+        return 0
+    }
+    # finally both $exp and $res should hold results
+    my $diff=_my_diff($exp,$res);
+    if ($diff && $test->{verbose}) {
+        diag "Error:\n$test->{name}($name) failed to return the expected result:\n",
+             $diff
+    }
+    return !$diff;
+}
+
+# eventually id like to move everything over to this.
+
+sub test_dump {
+    my ($test,$obj)=splice @_,0,2;
+    my $exp=normalize(pop @_);
+    # vars are now left in @_
+
+    $test={
+            name=>$test,
+            pre_eval=>'',
+            post_eval=>'',
+            no_dumper=>0,
+            no_redump=>0,
+          } unless ref $test;
+
+
+
+
+    $test->{verbose}=1 if not exists $test->{verbose} and $ENV{TEST_VERBOSE};
+
+    my @res=_dmp($obj,NO_EVAL,@_);
+    if (@res==2) {
+        diag "Error:\n",$res[1];
+        nok($test->{name});
+        return
+    }
+    my $to_dump=$obj->{out_names};
+    my $to_decl=$obj->Declare ? [] : $obj->{declare}||[];
+
+
+    my @dmp  =!$test->{no_dumper}
+              ? _dmp('Data::Dumper',NO_EVAL,@_)
+              : ();
+
+    if (@dmp==2 and $test->{verbose}) {
+        diag "Error:\n",$dmp[1];
+    }
+
+    my @reres=!$test->{no_redump}
+              ? _dmp($obj,\@res,$to_dump,$to_decl,pre_eval=>$test->{pre_eval},post_eval=>$test->{post_eval})
+              : ();
+
+    my @redmp=!$test->{no_redump} && !$test->{no_dumper}
+              ? _dmp('Data::Dumper',\@res,$to_dump,$to_decl,pre_eval=>$test->{pre_eval},post_eval=>$test->{post_eval})
+              : ();
+
+    my $ok= @dmp<2 &&
+            _eq($exp, \@res,$test,"Expected")   &&
+            _eq($exp, \@reres,$test,"Second tume") &&
+            _eq(\@dmp,\@redmp,$test,"Both Dumper's same ");
+
+    unless ($ok) {
+        warn "Got <<'EXPECT';\n$res[0]\nEXPECT\n";
+    }
+    ok( $ok, $test->{name} );
+}
+
+
+
+

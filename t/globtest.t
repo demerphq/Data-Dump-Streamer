@@ -80,40 +80,43 @@ $off, $width, $bits, $val, $res
 .
 EXPECT
                 SKIP: {
-                    skip "FORMAT's not supported before 5.8.0, (5.008) and this is $]" ,
-                         2
+                    skip "no FORMAT refs before ".vstr(5,7)." and this is ".vstr(),
+                         my $NUM=3
                        unless  5.008 <= $];
 
 		same( scalar $o->Data(*g{FORMAT})->Out, <<'EXPECT', "data slots (ref/FORMAT)", $o );
-$FORMAT1 = do{ local *F;
-           eval <<'_EOF_FORMAT_'
-format F =
-vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-$off, $width, $bits, $val, $res
-vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-$off, $width, $bits, $val, $res
-.
+$FORMAT1 = do{ local *F; my $F=<<'_EOF_FORMAT_'; $F=~s/^\s+# //mg; eval $F; die $F.$@ if $@; *F{FORMAT};
+           # format F =
+           # vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+           # $off, $width, $bits, $val, $res
+           # vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+           # $off, $width, $bits, $val, $res
+           # .
 _EOF_FORMAT_
-           *F{FORMAT} };
+           };
 EXPECT
                 my $y=bless *g{FORMAT},"Thank::YSTH";
-		same( scalar $o->Data(*g{FORMAT})->Out, <<'EXPECT', "data slots (blessed FORMAT)", $o );
-$Thank_YSTH1 = bless( do{ local *F;
-               eval <<'_EOF_FORMAT_'
-format F =
-vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-$off, $width, $bits, $val, $res
-vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-$off, $width, $bits, $val, $res
-.
+                #same ( scalar $o->Data(*g{FORMAT})->Out, <<'EXPECT', "data slots (blessed FORMAT)", $o );
+		test_dump( {name=>"data slots (blessed FORMAT)",
+		            verbose=>1,
+		            pre_eval=>'our ($off,$width,$bits,$val,$res);',
+		            no_dumper=>1
+		            },
+		             $o, *g{FORMAT}, <<'EXPECT'  );
+$Thank_YSTH1 = bless( do{ local *F; my $F=<<'_EOF_FORMAT_'; $F=~s/^\s+# //mg; eval $F; die $F.$@ if $@; *F{FORMAT};
+               # format F =
+               # vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+               # $off, $width, $bits, $val, $res
+               # vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+               # $off, $width, $bits, $val, $res
+               # .
 _EOF_FORMAT_
-               *F{FORMAT} }, 'Thank::YSTH' );
+               }, 'Thank::YSTH' );
 EXPECT
     our $gg=1; #silence a warning;
 		same( scalar $o->Data(*gg{FORMAT})->Out, <<'EXPECT', "data slots (empty FORMAT)", $o );
 $VAR1 = undef;
 EXPECT
-
                 };
 	}
 

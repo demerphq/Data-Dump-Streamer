@@ -1,4 +1,4 @@
-use Test::More tests => 27;
+use Test::More tests => 28;
 use lib './lib';
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump) ); }
 use strict;
@@ -322,7 +322,28 @@ $REF1 = \[
 ${${$REF1}->[0]} = \${$REF1}->[3];
 EXPECT
 }
-
+{
+    my @a = ('a0'..'a9');
+    unshift @a, \\$a[2];
+    test_dump( {name=>"merlyns test 2",
+                verbose=>1}, $o, ( \\@a ),
+               <<'EXPECT',  );
+$REF1 = \[
+          \do { my $v = 'R: ${$REF1}->[3]' },
+          'a0',
+          'a1',
+          'a2',
+          'a3',
+          'a4',
+          'a5',
+          'a6',
+          'a7',
+          'a8',
+          'a9'
+        ];
+${${$REF1}->[0]} = \${$REF1}->[3];
+EXPECT
+}
 
 
 __END__
