@@ -22,8 +22,8 @@ use vars qw(@ISA @EXPORT @EXPORT_OK @EXPORT_FAIL %EXPORT_TAGS $VERSION $XS_VERSI
 $DEBUG=0;
 
 BEGIN {
-    $VERSION   ='1.06';
-    $XS_VERSION='1.02';
+    $VERSION   ='1.07';
+    $XS_VERSION='1.07';
     @ISA       = qw(Exporter DynaLoader);
 
     @EXPORT=qw(Dump);
@@ -78,7 +78,7 @@ BEGIN {
         all    => [ @EXPORT,@EXPORT_OK ],
         alias  => [ qw( alias_av alias_hv alias_ref push_alias ) ],
         bin    => [ @EXPORT_OK ],
-        Dumper => [ q( Dumper DDumper )],
+        Dumper => [ qw( Dumper DDumper )],
         util   => [ qw (
                        blessed reftype refaddr refcount sv_refcount
                         readonly looks_like_number regex is_numeric
@@ -419,6 +419,8 @@ sub DDumper {
     return Data::Dumper::Dumper(@_);
 }
 
+sub _is_utf8 { length $_[0] != do { use bytes; length $_[0] } }
+
 BEGIN {
     my $numeric_rex=qr/^-?(?:0|[1-9]\d*)(\.\d+(?<!0))?$/;
 
@@ -440,17 +442,6 @@ BEGIN {
         local ($_) = shift;
         s/([\\\"\@\$])/\\$1/g;
 
-        #warn $_ if /unicode/;
-
-        #my $bytes;
-        #{ use bytes; $bytes = length }
-        #if ($bytes > length) {
-        #    use utf8;
-        #    #warn "Before>>$_";
-        #    s/([^\x00-\x7F])/'\\x{'.sprintf("%x",ord($1)).'}'/ge;
-        #    #warn "After >>$_";
-        #}
-
         return qq("$_") # fast exit
           unless /[^ !"\#\$%&'()*+,\-.\/0-9:;<=>?\@A-Z[\\\]^_`a-z{|}~]/;
 
@@ -458,12 +449,18 @@ BEGIN {
 
         if ( ord('^') == 94 ) {
             # ascii / utf8
-            # no need for 3 digits in escape for these
-            use utf8; #perl 5.6.1 needs this, 5.9.2 doesnt. sigh
-            s/([\0-\037])(?!\d)/ sprintf '\\%o',    ord($1)/xeg;
-            s/([\0-\037\177])  / sprintf '\\%03o',  ord($1)/xeg;
-            s/([\200-\377])    / sprintf '\\%03o',  ord($1)/xeg;
-            s/([^\040-\176])   / sprintf '\\x{%x}', ord($1)/xeg;
+            # no need for 3 digits in escape if followed by a digit
+            s/([\0-\037])(?!\d) / sprintf '\\%o',    ord($1)/xeg;
+            s/([\0-\037\177])   / sprintf '\\%03o',  ord($1)/xeg;
+
+            if (length $_ != do { use bytes; length $_ }) {
+                use utf8; #perl 5.6.1 needs this, 5.9.2 doesnt. sigh
+                s/([\200-\377]) / sprintf '\\%03o',  ord($1)/xeg;
+                s/([^\040-\176])/ sprintf '\\x{%x}', ord($1)/xeg;
+            } else {
+                # must not be under "use utf8" for 5.6.x
+                s/([\200-\377]) / sprintf '\\%03o',  ord($1)/xeg;
+            }
         } else {
             # ebcdic
             s{([^ !"\#\$%&'()*+,\-.\/0-9:;<=>?\@A-Z[\\\]^_`a-z{|}~])(?!\d)}
@@ -476,18 +473,19 @@ BEGIN {
     }
 
 
-
+    # single quote
     sub _quote {
         my $v = join "", @_;
         if ($v=~$numeric_rex) {
             return $v;
-        } elsif ($v!~/[^\x20-\x7F]/) {
+        } elsif ($v!~/[^\x20-\x7E]/) {
             $v =~ s/([\\''])/\\$1/g;
             return "'$v'";
         }
         return _qquote($v);
     }
 
+    # quote a key
     sub _quotekey {
         my $key = shift;
         if (!defined($key) or $key eq '') {
@@ -720,8 +718,8 @@ It should be noted that the setting of C<$\> will affect the behaviour of both o
 
   Dump($x,$y);
   print Dump($x,$y);
-  
-but it will not affect the behaviour of 
+
+but it will not affect the behaviour of
 
   print scalar Dump($x,$y);
 

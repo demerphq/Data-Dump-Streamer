@@ -37,4 +37,23 @@ implemented.
 Also started adding support for a "smart indent mode". Try using Indent(1)
 instead of Indent(2).
 
+1.06
+
+Added additional support for utf8 and some minor doc fixes. Thanks to
+Yitzchak yet again for the patches and advice.
+
+1.07
+
+Fixed some incorrect error messages in Streamer.xs. Updated CHANGES with 1.06
+info which I forgot from that release. Fixed utf8 related error. Thanks to
+Yitzchak for the patch. Provided a way to optionally install a 'DDS' alias
+for the module so that its easier to use from the command line. Doesn't install
+it by default, or via a normal CPAN install for namespace pollution reasons,
+and because I hate modules that dont automatically install. If you do
+
+  perl Makefile.PL DDS [STANDARD OPTS]
+
+then it will get installed.
+
+
 
