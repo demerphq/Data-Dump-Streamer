@@ -12,17 +12,22 @@ use Symbol;
 use warnings;
 use warnings::register;
 
-#local $Data::Dumper::Sortkeys=1;
-#local $Data::Dumper::Useperl=1;
-
 require overload;
-use vars qw(@ISA @EXPORT @EXPORT_OK @EXPORT_FAIL %EXPORT_TAGS $VERSION $XS_VERSION $DEBUG $AUTOLOAD);
+use vars qw(
+             $VERSION
+             $XS_VERSION
+             $AUTOLOAD
+             @ISA
+             @EXPORT @EXPORT_OK @EXPORT_FAIL %EXPORT_TAGS
+             $DEBUG
+           );
 
 $DEBUG=0;
 
 BEGIN {
-    $VERSION   ='1.08';
+    $VERSION   ='1.09';
     $XS_VERSION='1.08';
+    $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
 
     @EXPORT=qw(Dump);
@@ -183,6 +188,7 @@ Data::Dump::Streamer - Stream a highly accurate breadth first data dump in perl 
 =head1 SYNOPSIS
 
   use Data::Dump::Streamer;
+  use DDS;                           # or optionally if installed
 
   Dump($x,$y);                       # Prints to STDOUT
   Dump($x,$y)->Out();                #   "          "
@@ -318,6 +324,21 @@ possible a later version will extend this to also handle codrefs.
 B<Note> that the Freeze/Thaw methods will NOT be executed on objects that don't support those
 methods. The setting in this case will be silently ignored.
 
+=head2 Installing I<DDS> as an alias
+
+Its possible to have an alias to Data::Dump::Streamer created and installed
+for easier useage in one liners and short scripts. Data::Dump::Streamer is a
+bit long to type sometimes. However because this technically means polluting
+the root level namespace, and having it listed on CPAN, I have elected to have
+the installer not install it by default. If you wish it to be installed you
+must explicitly state so when Makefile.Pl is run:
+
+  perl Makefile.Pl DDS [Other MakeMaker options]
+
+Then a normal 'make test, make install' invocation will install DDS.
+
+Using DDS is identical to Data::Dump::Streamer.
+
 =head2 Data::Dumper Compatibility
 
 For drop in compatibility with the Dumper() usage of Data::Dumper, you may request
@@ -418,7 +439,7 @@ sub DDumper {
     return Data::Dumper::Dumper(@_);
 }
 
-sub _is_utf8 { length $_[0] != do { use bytes; length $_[0] } }
+#sub _is_utf8 { length $_[0] != do { use bytes; length $_[0] } }
 
 BEGIN {
     my $numeric_rex=qr/^-?(?:0|[1-9]\d*)(\.\d+(?<!0))?$/;
@@ -437,6 +458,7 @@ BEGIN {
     # Taken from Data::Dumper::qquote() 2.12.
     # Changed utf8 handling from that version
     # put a string value in double quotes
+    # Fixes by [ysth]
     sub _qquote {
         local ($_) = shift;
         s/([\\\"\@\$])/\\$1/g;
@@ -1017,7 +1039,7 @@ sub Data {
                 }
             }
             my $avg=$key_count>0 ? $key_sum/$key_count : 0;
-            $self->{ref_hklen}{$raddr}=($key_len>8 and (2/3*$key_len)>$avg) ? $avg : $key_len;
+            $self->{ref_hklen}{$raddr}=($key_len>8 and (2/3*$key_len)>$avg) ? int(0.5+$avg) : $key_len;
             $self->{ref_hkcnt}{$raddr}=$key_count;
             #warn "$raddr => $key_count";
 
@@ -1662,7 +1684,7 @@ sub _dump_hash {
     my $last_n=0;
     my $ind_str=" " x $indent;
     while (defined(my $k=defined $keys ? $keys->[$ix++] : each %$item)) {
-        $last_n=0 if ref $item->{$k};
+       $last_n=0 if ref $item->{$k};
         if ( $kc ) {
             my $do_ind=$ind && !$last_n ;
             $self->{fh}->print(",", $do_ind ? "\n$ind_str" : " ");
@@ -1674,7 +1696,10 @@ sub _dump_hash {
         }
         if ($indkey) {
             my $qk=_quotekey($k);
-            my $str=join "",$qk," " x ($indkey-length($qk)),$sep;
+            my $str=$indkey>=length($qk) ? join "",$qk," " x ($indkey-length($qk)),$sep
+                                         : join "",$qk,"\n$ind_str"," " x $indkey,$sep
+            ;
+
             $self->{buf}+=length($str);
             $self->{fh}->print($str);
         } else {
@@ -2753,8 +2778,7 @@ And to eric256 for noticing something... :-)
 
 =head1 SEE ALSO
 
-L<perl>. L<Perlmonks|http://www.perlmonks.org>. L<DDS|DDS> which is an alias to this
-module for easier typing and one-liner support.
+L<perl>. L<Perlmonks|http://www.perlmonks.org>.
 
 And of course www.perlmonks.org
 
