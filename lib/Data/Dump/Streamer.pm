@@ -22,8 +22,8 @@ use vars qw(@ISA @EXPORT @EXPORT_OK @EXPORT_FAIL %EXPORT_TAGS $VERSION $XS_VERSI
 $DEBUG=0;
 
 BEGIN {
-    $VERSION   ='1.05';
-    $XS_VERSION='1.01';
+    $VERSION   ='1.06';
+    $XS_VERSION='1.02';
     @ISA       = qw(Exporter DynaLoader);
 
     @EXPORT=qw(Dump);
@@ -422,15 +422,70 @@ sub DDumper {
 BEGIN {
     my $numeric_rex=qr/^-?(?:0|[1-9]\d*)(\.\d+(?<!0))?$/;
 
+    # used by _qquote below
+    my %esc = (
+        "\a" => "\\a",
+        "\b" => "\\b",
+        "\t" => "\\t",
+        "\n" => "\\n",
+        "\f" => "\\f",
+        "\r" => "\\r",
+        "\e" => "\\e",
+    );
+
+    # Taken from Data::Dumper::qquote() 2.12.
+    # Changed utf8 handling from that version
+    # put a string value in double quotes
+    sub _qquote {
+        local ($_) = shift;
+        s/([\\\"\@\$])/\\$1/g;
+
+        #warn $_ if /unicode/;
+
+        #my $bytes;
+        #{ use bytes; $bytes = length }
+        #if ($bytes > length) {
+        #    use utf8;
+        #    #warn "Before>>$_";
+        #    s/([^\x00-\x7F])/'\\x{'.sprintf("%x",ord($1)).'}'/ge;
+        #    #warn "After >>$_";
+        #}
+
+        return qq("$_") # fast exit
+          unless /[^ !"\#\$%&'()*+,\-.\/0-9:;<=>?\@A-Z[\\\]^_`a-z{|}~]/;
+
+        s/([\a\b\t\n\f\r\e])/$esc{$1}/g;
+
+        if ( ord('^') == 94 ) {
+            # ascii / utf8
+            # no need for 3 digits in escape for these
+            use utf8; #perl 5.6.1 needs this, 5.9.2 doesnt. sigh
+            s/([\0-\037])(?!\d)/ sprintf '\\%o',    ord($1)/xeg;
+            s/([\0-\037\177])  / sprintf '\\%03o',  ord($1)/xeg;
+            s/([\200-\377])    / sprintf '\\%03o',  ord($1)/xeg;
+            s/([^\040-\176])   / sprintf '\\x{%x}', ord($1)/xeg;
+        } else {
+            # ebcdic
+            s{([^ !"\#\$%&'()*+,\-.\/0-9:;<=>?\@A-Z[\\\]^_`a-z{|}~])(?!\d)}
+               {my $v = ord($1); '\\'.sprintf(($v <= 037 ? '%o' : '%03o'), $v)}eg;
+            s{([^ !"\#\$%&'()*+,\-.\/0-9:;<=>?\@A-Z[\\\]^_`a-z{|}~])}
+               {'\\'.sprintf('%03o',ord($1))}eg;
+        }
+
+        return qq("$_");
+    }
+
+
+
     sub _quote {
         my $v = join "", @_;
         if ($v=~$numeric_rex) {
             return $v;
-        } elsif ($v!~/[\0-\37\300-\377]/) {
+        } elsif ($v!~/[^\x20-\x7F]/) {
             $v =~ s/([\\''])/\\$1/g;
             return "'$v'";
         }
-        return Data::Dumper::qquote($v);
+        return _qquote($v);
     }
 
     sub _quotekey {
@@ -440,7 +495,7 @@ BEGIN {
         } elsif ($key=~$numeric_rex or $key =~ /^[-A-Za-z_]\w*$/) {
             return $key
         } else {
-            Data::Dumper::qquote($key);
+            _qquote($key);
         }
     }
 }
@@ -660,6 +715,15 @@ So to put it short:
 
   Dump($x,$y);                 # prints the dump.
   print Dump($x,$y);           # prints the dump.
+
+It should be noted that the setting of C<$\> will affect the behaviour of both of
+
+  Dump($x,$y);
+  print Dump($x,$y);
+  
+but it will not affect the behaviour of 
+
+  print scalar Dump($x,$y);
 
 =cut
 
@@ -1469,17 +1533,22 @@ sub _brace {
 
 sub _dump_qr {
     my ($self,$pat,$mod)=@_;
-    my @counts;
-    $counts[$_]++ foreach unpack "c*",$pat;
+    my %counts;
+    $counts{$_}++ foreach split //,$pat;
     my ($quotes,$best)=('',length($pat)+1);
     foreach my $char (qw( / ! % & <> {} " ),'#') {
         my $bad=0;
-        $bad+=$counts[ord($_)]||0 for split //,$char;
+        $bad+=$counts{$_}||0 for split //,$char;
         ($quotes,$best)=($char,$bad) if $bad<$best;
         last unless $best;
     }
     $pat=~s/(?!\\)([$quotes])/\\$1/g
         if $best;
+    {
+    use utf8;
+    #$pat=~s/([^\x00-\x7f])/sprintf '\\x{%x}',ord $1/ge;
+    $pat=~s/([^\040-\176])/sprintf "\\x{%x}", ord($1)/ge;
+    }
     $self->{fh}->print('qr',substr($quotes,0,1),$pat,substr($quotes,-1),$mod);
     return
 }
@@ -2614,10 +2683,14 @@ on request.
         DDumper
 
   :undump          # Collection of routines needed to undump something
-        alias_av
-        alias_hv
-        alias_ref
-        make_ro
+        alias_av              # aliases a given array value to a scalar
+        alias_hv              # aliases a given hashes value to a scalar
+        alias_ref             # aliases a scalar to another scalar
+        make_ro               # makes a scalar read only
+        lock_keys             # pass through to Hash::Util::lock_keys
+        lock_keys_plus        # like lock_keys, but adds keys to those present
+        lock_ref_keys         # like lock_keys but operates on a hashref
+        lock_ref_keys_plus    # like lock_keys_plus but operates on a hashref
 
   :alias           # all croak on failure
      alias_av(@Array,$index,$var);
