@@ -1,4 +1,4 @@
-use Test::More tests => 28;
+use Test::More tests => 30;
 use lib './lib';
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump) ); }
 use strict;
@@ -344,7 +344,26 @@ $REF1 = \[
 ${${$REF1}->[0]} = \${$REF1}->[3];
 EXPECT
 }
-
+{
+    use utf8;
+    my $r = "This contains unicode: /\x{263A}/";
+    my $qr= qr/$r/;
+    test_dump( {name=>"Unicode qr// and string",
+                no_dumper=>1,verbose=>1}, $o, ( $r,$qr ),
+               <<'EXPECT',  );
+$VAR1 = "This contains unicode: /\x{263a}/";
+$Regexp1 = qr!This contains unicode: /\x{263a}/!;
+EXPECT
+}
+{
+    use utf8;
+    my $r = "\x{100}\x{101}\x{102}";
+    test_dump( {name=>"Unicode qr// and string",
+                no_dumper=>1,verbose=>1}, $o, ( $r ),
+               <<'EXPECT',  );
+$VAR1 = "\x{100}\x{101}\x{102}";
+EXPECT
+}
 
 __END__
 # with eval testing
