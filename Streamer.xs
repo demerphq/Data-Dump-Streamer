@@ -118,8 +118,49 @@ esc_q(register char *d, register char *s, register STRLEN slen)
     return ret;
 }
 
-MODULE = Data::Dump::Streamer		PACKAGE = Data::Dump::Streamer
 
+XS(XS_Data__Dump__Streamer_SvREADONLY);
+XS(XS_Data__Dump__Streamer_SvREADONLY)	/* This is dangerous stuff. */
+{
+    dXSARGS;
+    SV *sv = SvRV(ST(0));
+    if (items == 1) {
+	 if (SvREADONLY(sv))
+	     XSRETURN_YES;
+	 else
+	     XSRETURN_NO;
+    }
+    else if (items == 2) {
+	if (SvTRUE(ST(1))) {
+	    SvREADONLY_on(sv);
+	    XSRETURN_YES;
+	}
+	else {
+	    /* I hope you really know what you are doing. */
+	    SvREADONLY_off(sv);
+	    XSRETURN_NO;
+	}
+    }
+    XSRETURN_UNDEF; /* Can't happen. */
+}
+
+XS(XS_Data__Dump__Streamer_SvREFCNT);
+XS(XS_Data__Dump__Streamer_SvREFCNT)	/* This is dangerous stuff. */
+{
+    dXSARGS;
+    SV *sv = SvRV(ST(0));
+    if (items == 1)
+	 XSRETURN_IV(SvREFCNT(sv) - 1); /* Minus the ref created for us. */
+    else if (items == 2) {
+         /* I hope you really know what you are doing. */
+	 SvREFCNT(sv) = SvIV(ST(1));
+	 XSRETURN_IV(SvREFCNT(sv));
+    }
+    XSRETURN_UNDEF; /* Can't happen. */
+}
+
+
+MODULE = Data::Dump::Streamer		PACKAGE = Data::Dump::Streamer
 
 int
 alias_av(avref, key, val)
@@ -707,3 +748,94 @@ PPCODE:
     /* 'twould appear it aint a regex, so return undef/empty list */
     XSRETURN_UNDEF;
 }
+
+#if PERL_VERSION >= 8
+
+void
+all_keys(hash,keys,placeholder)
+	SV* hash
+	SV* keys
+	SV* placeholder
+    PROTOTYPE: \%\@\@
+    PREINIT:
+	AV* av_k;
+        AV* av_p;
+        HV* hv;
+        SV *key;
+        HE *he;
+    CODE:
+	if (!SvROK(hash) || SvTYPE(SvRV(hash)) != SVt_PVHV)
+	   croak("First argument to all_keys() must be an HASH reference");
+	if (!SvROK(keys) || SvTYPE(SvRV(keys)) != SVt_PVAV)
+	   croak("Second argument to all_keys() must be an ARRAY reference");
+        if (!SvROK(placeholder) || SvTYPE(SvRV(placeholder)) != SVt_PVAV)
+	   croak("Third argument to all_keys() must be an ARRAY reference");
+
+	hv = (HV*)SvRV(hash);
+	av_k = (AV*)SvRV(keys);
+	av_p = (AV*)SvRV(placeholder);
+
+        av_clear(av_k);
+        av_clear(av_p);
+
+        (void)hv_iterinit(hv);
+	while((he = hv_iternext_flags(hv, HV_ITERNEXT_WANTPLACEHOLDERS))!= NULL) {
+	    key=hv_iterkeysv(he);
+            if (HeVAL(he) == &PL_sv_placeholder) {
+                SvREFCNT_inc(key);
+	        av_push(av_p, key);
+            } else {
+                SvREFCNT_inc(key);
+	        av_push(av_k, key);
+            }
+        }
+
+
+
+void
+hidden_keys(hash)
+	SV* hash
+    PROTOTYPE: \%
+    PREINIT:
+        HV* hv;
+        SV *key;
+        HE *he;
+    PPCODE:
+	if (!SvROK(hash) || SvTYPE(SvRV(hash)) != SVt_PVHV)
+	   croak("First argument to all_keys() must be an HASH reference");
+
+	hv = (HV*)SvRV(hash);
+
+        (void)hv_iterinit(hv);
+	while((he = hv_iternext_flags(hv, HV_ITERNEXT_WANTPLACEHOLDERS))!= NULL) {
+	    key=hv_iterkeysv(he);
+            if (HeVAL(he) == &PL_sv_placeholder) {
+                XPUSHs( key );
+            }
+        }
+
+void
+legal_keys(hash)
+	SV* hash
+    PROTOTYPE: \%
+    PREINIT:
+        HV* hv;
+        SV *key;
+        HE *he;
+    PPCODE:
+	if (!SvROK(hash) || SvTYPE(SvRV(hash)) != SVt_PVHV)
+	   croak("First argument to all_keys() must be an HASH reference");
+
+	hv = (HV*)SvRV(hash);
+
+        (void)hv_iterinit(hv);
+	while((he = hv_iternext_flags(hv, HV_ITERNEXT_WANTPLACEHOLDERS))!= NULL) {
+	    key=hv_iterkeysv(he);
+            XPUSHs( key );
+        }
+
+#endif
+
+BOOT:
+newXSproto("Data::Dump::Streamer::SvREADONLY_ref", XS_Data__Dump__Streamer_SvREADONLY, file,"$;$");
+newXSproto("Data::Dump::Streamer::SvREFCNT_ref", XS_Data__Dump__Streamer_SvREFCNT, file,"$;$");

@@ -14,7 +14,7 @@ t/globtest.t
 t/hardrefs.t
 t/madness.t
 t/names.t
-t/readonly.t
+t/xs_subs.t
 t/refaddr.t
 t/refcount.t
 t/refelem.t
@@ -22,3 +22,4 @@ t/reftype.t
 t/sortkeys.t
 t/test_helper.pl
 t/tree.t
+t/locked.t
