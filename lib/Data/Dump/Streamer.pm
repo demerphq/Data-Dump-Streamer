@@ -19,7 +19,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $VERSION $XS_VERSION $DEBUG $AU
 $DEBUG=0;
 
 BEGIN {
-    $VERSION   ='1.01';
+    $VERSION   ='1.02';
     $XS_VERSION='1.0';
     @ISA       = qw(Exporter DynaLoader);
 
@@ -272,6 +272,7 @@ sub new {
             verbose      => 1,         # use long names and detailed fill ins
             dumpglob     => 1,         # dump glob contents
             deparseglob  => 1,
+            deparseformat=> 1,
             deparse      => 1,         # deparse code refs?
             freeze       => '',        # default freezer
             thaw         => '',        # default thaw
@@ -286,6 +287,7 @@ sub new {
             codestub     => 'sub { Carp::confess "Dumped code stub!" }',
             # use these opts if deparse is 1
             deparseopts  => ["-sCi2v'Useless const omitted'"],
+            special     =>0,
 
             # not yet implemented
 
@@ -295,7 +297,7 @@ sub new {
             smart_array => 1,         # special handling of very large arrays
                                       # with hashes as their 0 index. (pseudo-hash error detection)
         },
-        debug=>1,
+        debug=>0,
         cataloged => 0,
         ref_id =>0,
         sv_id =>0
@@ -492,9 +494,9 @@ sub diag_sv_idx {
     my $prefix=shift||'';
     my $oidx=$self->{ref}{$self->{sva}[$idx]};
     my $ret=$prefix.
-    sprintf "S%s%2d : %#x(c%2d) Dp:%2d %s Du:%s => %s %s %s %s\n",
+    sprintf "S%s%2d : %#x(c%2d|%2d) Dp:%2d %s Du:%s => %s %s %s %s\n",
         ($self->{special}{$idx} ? '*' : ' '),$idx,
-        (map { $self->{$_}[$idx] } qw( sva svc svd )),
+        (map { $self->{$_}[$idx] } qw( sva svc svt svd )),
         ($self->{svro}[$idx] ? 'RO ' : 'RW'),
         (!$self->{svdu}[$idx] ? '-' : defined ${$self->{svdu}[$idx]} ? ${$self->{svdu}[$idx]} : '?'),
         $self->{svn}[$idx],
@@ -512,8 +514,8 @@ sub diag_ref_idx {
     my $self=shift;
     my $idx=shift;
     my $oidx=$self->{sv}{$self->{refa}[$idx]};
-    sprintf "R %2d : %#x(c%2d) Dp:%2d    Du:%s => %s %s\n",
-        $idx,(map { defined $self->{$_}[$idx] ?  $self->{$_}[$idx] : -1} qw(refa refc refd )),
+    sprintf "R %2d : %#x(c%2d|%2d) Dp:%2d    Du:%s => %s %s\n",
+        $idx,(map { defined $self->{$_}[$idx] ?  $self->{$_}[$idx] : -1} qw(refa refc reft refd )),
         (!$self->{refdu}[$idx] ? '-' : defined ${$self->{refdu}[$idx]} ? ${$self->{refdu}[$idx]} : '?'),
         $self->{refn}[$idx],
         (($oidx) ? " < $self->{svn}[$oidx] >" : "")
@@ -586,27 +588,32 @@ sub Dump {
 
 
 sub _reg_ref {
-    my ($self,$item,$depth,$name,$cnt)=@_;
+    my ($self,$item,$depth,$name,$cnt,$arg)=@_;
 
     my $addr=refaddr $item;
+    $arg->{raddr}=$addr if $arg;
     my $idx;
     unless ($idx=$self->{ref}{$addr}) {
         $idx=$self->{ref}{$addr}=++$self->{ref_id};
+        $arg->{ridx}=$idx if $arg;
         $self->{refn}[$idx]=$name;
         $self->{refd}[$idx]=$depth;
         $self->{refa}[$idx]=$addr;
         $self->{refc}[$idx]=$cnt;
         return wantarray ? ($idx,0) : $idx
     }
+    $self->{reft}[$idx]++;
+    $arg->{ridx}=$idx if $arg;
     return wantarray ? ($idx,1) : undef;
 }
 
 
 sub _reg_scalar {
-    my ($self,$item,$depth,$cnt,$ro,$name)=@_;
+    my ($self,$item,$depth,$cnt,$ro,$name,$arg)=@_;
     Carp::cluck $name if $name=~/^\$\*/;
     my $addr=refaddr \$_[1];
     my $idx;
+    $arg->{addr}=$addr if $arg;
     unless ($idx=$self->{sv}{$addr}) {
         $idx=$self->{sv}{$addr}=++$self->{sv_id};
         $self->{svd}[$idx]=$depth;
@@ -629,6 +636,8 @@ sub _reg_scalar {
             $self->{svn}[$idx]=$name;
         }
     }
+    $self->{svt}[$idx]++;
+    $arg->{idx}=$idx if $arg;
     Carp::confess "Dupe name!" if $self->{svrt}{$name};
     $self->{svrt}{$name}=$idx;
     return $name;
@@ -687,9 +696,9 @@ Returns $self.
 
 
 sub _add_queue {
-    my ($self,$queue,$type,$item,$depth,$name,$rcount)=@_;
+    my ($self,$queue,$type,$item,$depth,$name,$rcount,$arg)=@_;
     if (substr($type,0,1) ne '*') {
-        push @$queue,[\$item,$depth,$name,$rcount];
+        push @$queue,[\$item,$depth,$name,$rcount,$arg];
     } elsif($self->{style}{dumpglob}) {
         local @_;
         foreach my $t (qw(SCALAR HASH ARRAY),
@@ -733,11 +742,12 @@ sub Data {
             1,
             $arg->{refcnt},
             $arg->{ro},
-            $make_name
+            $make_name,
+            $arg
         );
         $arg->{name}=$name;
         if (my $type=reftype_or_glob ${ $arg->{item} }) {
-            $self->_add_queue(\@queue, $type, ${ $arg->{item} }, 2, $name, refcount ${ $arg->{item} })
+            $self->_add_queue(\@queue, $type, ${ $arg->{item} }, 2, $name, refcount ${ $arg->{item} },$arg)
         }
     }
 
@@ -752,7 +762,8 @@ sub Data {
         my ($ritem,
             $cdepth,
             $cname,
-            $rcnt)=@{shift @queue};
+            $rcnt,
+            $arg)=@{shift @queue};
 
         my ($frozen,$item,$raddr,$class);
         DEQUEUE:{
@@ -787,7 +798,7 @@ sub Data {
             }
         }
 
-        my ($idx,$dupe)=$self->_reg_ref($item,$cdepth,$cname,$rcnt);
+        my ($idx,$dupe)=$self->_reg_ref($item,$cdepth,$cname,$rcnt,$arg);
         $DEBUG and print "  Skipping '$cname' as it is a dupe of ".
                          "$self->{refn}[$idx]\n"
             if $dupe;
@@ -938,21 +949,25 @@ sub _apply_fix {
         foreach my $glob (@globs) {
             my ($type,$lhs,$rhs,$depth)=@$glob;
             local @_;
+            (my $name=$rhs); #=~s/^\*/$tname{$t}/;
             foreach my $t (qw(SCALAR HASH ARRAY),
                 ($self->{style}{deparse} && $self->{style}{deparseglob}
-                ? 'CODE' : () ))
+                ? 'CODE' : () ),
+
+                )
             {
                 my $v=*$lhs{$t};
                 next unless defined $v;
                 next if $t eq 'SCALAR' and !defined($$v);
-                #warn "_apply_fix:".$type.":$t\n";
+
                 my $dumped=0;
-                (my $name=$rhs); #=~s/^\*/$tname{$t}/;
-                #warn "'$lhs' '$rhs' '$depth' '$name'\n";
+
+
                 my $gaddr=refaddr(*$lhs{$t});
                 my $gidx=$self->{ref}{$gaddr};
                 if ($self->{refd}[$gidx]<$depth+1) {
                     $self->_add_fix('ref',$name,$gidx,blessed(*$lhs{$t}));
+
                     next;
                 }
 
@@ -963,6 +978,26 @@ sub _apply_fix {
                     if $ret;
                 $self->{fh}->print(";\n");
                 $dumped=1;
+            }
+            if ($self->{style}{deparse} && $self->{style}{deparseformat}
+                #and defined *$lhs{FORMAT}
+            ) {
+                # from link from [ysth]: http://groups.google.com/groups?selm=laUs8gzkgOlT092yn%40efn.org
+                # translate arg (or reference to it) into a B::* object
+                my $Bobj = B::svref_2object(\*$lhs);
+
+                # if passed a glob or globref, get the format
+                $Bobj = B::GV::FORM($Bobj) if ref $Bobj eq 'B::GV';
+
+                if (ref $Bobj eq 'B::FM') {
+                    (my $cleaned=$name)=~s/^\*(::)?//;
+                    $self->{fh}->print("format $cleaned = ");
+                    my $deparser = B::Deparse::->new();
+                    $self->{fh}->print(
+                        $deparser->indent($deparser->deparse_format($Bobj))
+                    );
+                    $self->{fh}->print("\n");
+                }
             }
         }
         redo GLOB if @globs;
@@ -1060,7 +1095,34 @@ sub Out {
     $self->{declare}=[];
     $self->{special}={};
     $DEBUG>9 and $self->diag;
-    foreach my $item (@{$args_insideout{$self}}) {
+
+    my @items=@{$args_insideout{$self}};
+
+    my $namestr="";
+
+    push @{$self->{out_names}},map{$_->{name}}@items; #must
+    push @{$self->{declare}},map{$_->{name}}@items;
+
+    if ($self->{style}{special}) {
+
+        warn DDumper(\@items) if $DEBUG;
+
+        $namestr="# (".join (", ",@{$self->{out_names}}).")\n";
+
+        @items=sort { $self->{svc}[$b->{idx}] <=> $self->{svc}[$a->{idx}]||
+                  ($b->{raddr} ? $self->{refc}[$b->{ridx}] : 0)
+                   <=>
+                  ($a->{raddr} ? $self->{refc}[$a->{ridx}] : 0)
+            } @items;
+
+
+
+
+        warn DDumper(\@items) if $DEBUG;
+    }
+
+
+    foreach my $item (@items) {
         my $dumped=0;
         my $ret=$self->_dump_sv(${$item->{item}},1,\$dumped,$item->{name});
         Carp::confess "\nUnhandled alias value '$ret' returned to Out()!"
@@ -1069,6 +1131,8 @@ sub Out {
         $dumped=1;
         $self->_apply_fix();
     }
+    $self->{fh}->print($namestr) if $namestr;
+
     $self->diag if $DEBUG;
     #warn "@{$self->{out_names}}";
     if ( $self->{return} and defined wantarray) {
@@ -1148,8 +1212,8 @@ sub _dump_sv {
                     if ($self->{style}{declare}) {
                         $self->{fh}->print("my $name;\n");
                     }
-                    push @{$self->{out_names}},$name;
-                    push @{$self->{declare}},$name;
+                    #push @{$self->{out_names}},$name;
+                    #push @{$self->{declare}},$name;
                     $self->{fh}->print("alias_ref(\\$name,\\$self->{svn}[$idx])");
                 } else {
                     $self->{fh}->print(!$self->{style}{verbose} ? "'A'" : _quote("A: ",$self->{svn}[$idx]));
@@ -1191,8 +1255,8 @@ sub _dump_sv {
 
                 print $self->diag_sv_idx($idx,1) if $DEBUG;
         }
-        push @{$self->{out_names}},$name; #must
-        push @{$self->{declare}},$name;
+        #push @{$self->{out_names}},$name; #must
+        #push @{$self->{declare}},$name;
         unless ($name=~/^\&/) {
             my $str=($self->{style}{declare} && $name!~/^\*/ ? "my " : "")."$name = ";
             $self->{fh}->print($str);
@@ -1436,18 +1500,26 @@ sub _dump_array {
             }
         }
     } else {
+        # this is evil and must be changed.
+        # ... evil ... totally evil... blech
         for ( my $k = 0 ; $k <= $#$item ; ) {
             my $v     = $item->[$k];
             my $count = 1;
             if (!refaddr($item->[$k]) and !readonly($item->[$k])
-                and !$self->{sv}{refaddr(\$item->[$k])}
+                and (!$self->{sv}{refaddr(\$item->[$k])} or
+                $self->{svt}[$self->{sv}{refaddr(\$item->[$k])}]==1)
             )
             {
                 COUNT:while (
                         $k + $count <= $#$item
+
                     and !refaddr($item->[ $k + $count ])
+
                     and !readonly($item->[ $k + $count ])
-                    and !$self->{sv}{refaddr(\$item->[$k + $count])}
+
+                    and (!$self->{sv}{refaddr(\$item->[$k + $count])} or
+                         $self->{svt}[$self->{sv}{refaddr(\$item->[$k + $count])}]==1)
+
                     and !$v == !$item->[ $k + $count ]
                 )
 
@@ -1466,7 +1538,7 @@ sub _dump_array {
 
             $self->{fh}->print("( ")
                 if $count>1;
-            my $alias=$self->_dump_sv($item->[$k],$depth+1,$dumped,
+           my $alias=$self->_dump_sv($item->[$k],$depth+1,$dumped,
                                 $self->_build_name($name,'[',$k),
                                 $indent
             );
@@ -1519,6 +1591,22 @@ sub _dump_code {
         $self->{fh}->print("$code");
     }
     return
+}
+
+sub _dump_format {
+    # from link from [ysth]: http://groups.google.com/groups?selm=laUs8gzkgOlT092yn%40efn.org
+    # translate arg (or reference to it) into a B::* object
+    my $Bobj = B::svref_2object(ref $_[0] ? $_[0] : \$_[0]);
+    # if passed a glob or globref, get the format
+    $Bobj = B::GV::FORM($Bobj) if ref $Bobj eq 'B::GV';
+
+    if (ref $Bobj ne 'B::FM') {
+        require Carp;
+        Carp::croak "deparse_format: expected a glob, globref, or format ref (".(ref $Bobj).")";
+    }
+
+    my $deparser = B::Deparse::->new();
+    return $deparser->indent($deparser->deparse_format($Bobj));
 }
 
 sub _dump_rv {
@@ -1884,7 +1972,16 @@ Defaults to 'sub { Carp::confess "Dumped code stub!" }'
 
 =item DeparseGlob
 
-=item DeparseGlob
+=item DeparseGlob BOOL
+
+If Deparse is True then this style attribute will determine if subroutines
+contained in globs that are dumped will be deparsed or not.
+
+Defaults to True.
+
+=item DeparseFormat
+
+=item DeparseFormat BOOL
 
 If Deparse is True then this style attribute will determine if subroutines
 contained in globs that are dumped will be deparsed or not.
@@ -2012,6 +2109,7 @@ sub DumpGlob    {}
 sub Deparse     {}
 sub CodeStub    {}
 sub DeparseGlob {}
+sub DeparseFormat {}
 sub Rle         {}
 sub Freeze      {}
 sub Thaw        {}
@@ -2083,7 +2181,7 @@ sub HashKeys {
 *Hashkeys=*HashKeys;
 
 my %scalar_meth=map{ $_ => lc($_)} qw(Declare Indent IndentCols SortKeys Sortkeys IndentKeys
-        Verbose DumpGlob Deparse DeparseGlob CodeStub Rle Freeze Thaw);
+        Verbose DumpGlob Deparse DeparseGlob DeparseFormat CodeStub Rle Freeze Thaw);
 my %hash_meth=map {$_ => lc($_)} qw(FreezeClass ThawClass IgnoreClass);
 
 sub AUTOLOAD {
@@ -2284,6 +2382,8 @@ Jeff Pinyan, Richard Clamp, and Gurusamy Sarathy.
 
 Thanks to Dan Brook (broquaint) for testing and moral support. Without his
 encouragement the 1.0 release would never have been written.
+
+Thanks to Yitzchak Scott-Thoennes for the format dumping code.
 
 =head1 SEE ALSO
 

@@ -1,4 +1,4 @@
-use Test::More tests => 25;
+use Test::More tests => 26;
 use lib './lib';
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump) ); }
 use strict;
@@ -111,8 +111,6 @@ EXPECT
 # with eval testing
 {
     my $x=[(1) x 4, 0, (1) x 4];
-    my $one=1;
-    my $y=sub { \@_ }->((1)x3,$one,0,$one,(1)x3);
     same( "Rle(1)", $o->Declare(0)->Rle(0), <<'EXPECT', ( $x ) );
 $ARRAY1 = [
             1,
@@ -137,26 +135,22 @@ $ARRAY1 = [
             ( 1 ) x 4
           ];
 EXPECT
+    #local $Data::Dump::Streamer::DEBUG=1;
+    my $one=1;
+    #do this to avoid problems with differing behaviour in (1) x 3
+    my @one=(1,1,1);
+    my @two=(1,1,1);
+    my $y=sub { \@_ }->(@one,$one,0,$one,@two);
     same( "Rle(1) Alias", $o->Rle(1), <<'EXPECT', ( $y ) );
 $ARRAY1 = [
-            1,
-            1,
-            1,
+            ( 1 ) x 3,
             1,
             0,
             'A: $ARRAY1->[3]',
-            1,
-            1,
-            1
+            ( 1 ) x 3
           ];
-make_ro($ARRAY1->[0]);
-make_ro($ARRAY1->[1]);
-make_ro($ARRAY1->[2]);
 make_ro($ARRAY1->[4]);
 alias_av(@$ARRAY1, 5, $ARRAY1->[3]);
-make_ro($ARRAY1->[6]);
-make_ro($ARRAY1->[7]);
-make_ro($ARRAY1->[8]);
 EXPECT
 
 }
@@ -299,7 +293,27 @@ alias_av(@$ARRAY1, 2, $ARRAY1->[1]);
 $ARRAY1->[4] = $ARRAY1->[3];
 EXPECT
 }
-
+# with eval testing
+{
+    my @a = ('a0'..'a9');
+    unshift @a, \\$a[2];
+    same( "merlyns test", $o, <<'EXPECT', ( \\@a ) );
+$REF1 = \[
+          \do { my $v = 'R: ${$REF1}->[3]' },
+          'a0',
+          'a1',
+          'a2',
+          'a3',
+          'a4',
+          'a5',
+          'a6',
+          'a7',
+          'a8',
+          'a9'
+        ];
+${${$REF1}->[0]} = \${$REF1}->[3];
+EXPECT
+}
 
 
 
