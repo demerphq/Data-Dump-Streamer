@@ -1,4 +1,14 @@
-1.0 Release version. Name changed to Data::Dump::Streamer which will be future name.
+1.0
+
+Release version. Name changed to Data::Dump::Streamer which will be future name.
+
+1.01
+
+Post-release minor fix to provide SortKeys and Hashkeys aliases to SortKeys
+and HashKeys. Thanks to Slaven Rezic for the heads up. Added documentation
+improvements and fixes as well as a very slight and subtle change to the
+behaviour of Dump() in list context.
+
 
 
 

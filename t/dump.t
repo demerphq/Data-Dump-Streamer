@@ -1,6 +1,6 @@
-use Test::More tests => 20;
+use Test::More tests => 25;
 use lib './lib';
-BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump) ); }
+BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump) ); }
 use strict;
 use warnings;
 use Data::Dumper;
@@ -264,6 +264,45 @@ $ARRAY1 = [
           ];
 EXPECT
 }
+# with eval testing
+{
+    my ($x,$y)=10;
+    my $obj=Dump();
+    isa_ok($obj, "Data::Dump::Streamer","Dump() Return noarg/scalar");
+    $obj=Dump($x,$y);
+    isa_ok($obj, "Data::Dump::Streamer","Dump() Return arg/scalar");
+    my @lines=Dump($x,$y);
+    ok(!ref($lines[0]),"Dump() Return args/list");
+    @lines=Dump($x,$y)->Indent(0)->Out();
+    ok(!ref($lines[0]),"Dump() Return args/list-scalar");
+}
+# with eval testing
+{
+    my $x=1;
+    my $y=[];
+    my $array=sub{\@_ }->( $x,$x,$y );
+    push @$array,$y,1;
+    unshift @$array,\$array->[-1];
+    #Dump($array);
+
+    same( "Documentation example", $o, <<'EXPECT', ( $array ) );
+$ARRAY1 = [
+            'R: $ARRAY1->[5]',
+            1,
+            'A: $ARRAY1->[1]',
+            [],
+            'V: $ARRAY1->[3]',
+            1
+          ];
+$ARRAY1->[0] = \$ARRAY1->[5];
+alias_av(@$ARRAY1, 2, $ARRAY1->[1]);
+$ARRAY1->[4] = $ARRAY1->[3];
+EXPECT
+}
+
+
+
+
 __END__
 # with eval testing
 {
