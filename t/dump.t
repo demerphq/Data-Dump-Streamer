@@ -1,4 +1,4 @@
-use Test::More tests => 26;
+use Test::More tests => 27;
 use lib './lib';
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump) ); }
 use strict;
@@ -52,7 +52,15 @@ $REF2 = \[];
 $SCALAR1 = \do { my $v = 'foo' };
 $SCALAR2 = \'bar';
 EXPECT
+    # originally the $o was an accident that exposed a bug
+    # it was supposed to be $t all along, but they tickle different things.
+    my $t={};
+    bless $t,"Barts::Object::${t}::${o}";
+    same(   "Bart's Funky Refs", $o,<<'EXPECT', ( $t ) );
+$Barts_Object_HASH1 = bless( {}, 'Barts::Object::HASH(0xdeadbeef)::Data::Dump::Streamer=HASH(0xdeadbeef)' );
+EXPECT
 }
+
 {
     my ($a,$b);
 $a = [{ a => \$b }, { b => undef }];

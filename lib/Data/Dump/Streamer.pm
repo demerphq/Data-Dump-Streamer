@@ -1,7 +1,7 @@
 package Data::Dump::Streamer;
 use strict;
 use warnings;
-#use lib 'D:/perl/build/Data-Dump-Streamer-0.0x/lib';
+use lib 'D:/dev/Data-Dump-Streamer/lib';
 use Exporter;
 use DynaLoader;
 use Text::Balanced qw(extract_bracketed);
@@ -19,7 +19,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $VERSION $XS_VERSION $DEBUG $AU
 $DEBUG=0;
 
 BEGIN {
-    $VERSION   ='1.02';
+    $VERSION   ='1.03';
     $XS_VERSION='1.0';
     @ISA       = qw(Exporter DynaLoader);
 
@@ -76,9 +76,41 @@ BEGIN {
     Data::Dump::Streamer->bootstrap($XS_VERSION);
 }
 
-
-
-
+# NOTE
+# ----
+# This module uses the term 'sv' in a way that is misleading.
+# It doesnt always mean the same as it would in the core.
+#
+# 1. data is breadth first traversed first, in the pretty much
+# self contained Data() routine which farms out a bit to
+# _reg_ref and _reg_scalar which handle "registering" items for
+# later use, such as their depth, refcount, "name", etc. But
+# ONLY for references and scalars whose refcount is over 2.
+# Most real SV's will have a refcount of 2 when we look at them
+# (from the perl side) so we actually dont know about them (trust me)
+# They _cant_ be referenced twice, and they can't be aliased so we can
+# can just ignore them until the second pass.
+# 2.Once this has happened Out() is called which starts off a
+# normal depth first traverse over the structure. It calls into
+# 3._dump_sv which in the case of a reference falls through to _dump_rv.
+# Aliasing and a bunch of stuff like that are checked here before we even
+# look at the reference type.
+# 4.If its a ref we fall through to dumping the reference in _dump_rv.
+# Here we handle duplicate refs, and manage depth  checks, blessing, refs
+#(which is scary nasty horrible code) and then pass on to _dump_type where
+# type is one of 'code', 'qr', 'array' etc. Each of these which have children
+# then call back into _dump_sv as required.
+# 5. Because of the way perl works, we can't emit anthing more than a DAG in a
+# single statment, so for more complex structures we need to add in the broken
+# links. I call these "fix statements", and they encompass copying reference
+# values, creating aliases, or even dumping globs.  When a fix statment is needed
+# any of the _dump_foo methods will call _add_fix and add to the list of fixes.
+# after every root level _dump_sv call from Out() any fix statements possible to be
+# resolved will be emitted and removed from the fix list. This happens in
+# _apply_fix, which is another piece of horrible code.
+#
+# Anyway, its terribly ugly, but for anything I can think to throw at it it works.
+# demerphq
 
 =head1 NAME
 
@@ -381,6 +413,7 @@ sub _make_name {
             }
         }
         $name =~ s/::/_/g;
+        ($name)=$name=~/(\w+)/; #take the first word;
         return '$' . $name . ( ++$self->{type_ids}{$name} );
     } elsif ( $uname =~ /^\*/ ) {
         my $type = reftype( $_[1] ) || '';
@@ -481,7 +514,7 @@ sub _build_name {
 sub _reset {
     my $self=shift;
     foreach my $key (keys %$self) {
-        next unless $key=~/^(sv|ref|fix|cat|type|names)/;
+        next unless $key=~/^(sv|ref|fix|cat|type|names|reqs)/;
         delete $self->{$key};
     }
     $self->{sv_id}=$self->{ref_id}=0;
@@ -859,7 +892,7 @@ sub Data {
             $self->{ref_hkcnt}{$raddr}=$key_count;
             #warn "$raddr => $key_count";
 
-        } elsif ($reftype eq 'CODE') {
+        } elsif ($reftype eq 'CODE' or $reftype eq 'FORMAT') {
             next;
         } else {
             # CODE? IO?
@@ -947,9 +980,10 @@ sub _apply_fix {
             $r;
         } @{$self->{fix}};
         foreach my $glob (@globs) {
-            my ($type,$lhs,$rhs,$depth)=@$glob;
+            my ($type,$lhs,$rhs,$depth,$name)=@$glob;
+            print "Symbol: $name\n" if $DEBUG and $name;
             local @_;
-            (my $name=$rhs); #=~s/^\*/$tname{$t}/;
+            $name=$name ? '*'.$name : $rhs;
             foreach my $t (qw(SCALAR HASH ARRAY),
                 ($self->{style}{deparse} && $self->{style}{deparseglob}
                 ? 'CODE' : () ),
@@ -991,7 +1025,7 @@ sub _apply_fix {
 
                 if (ref $Bobj eq 'B::FM') {
                     (my $cleaned=$name)=~s/^\*(::)?//;
-                    $self->{fh}->print("format $cleaned = ");
+                    $self->{fh}->print("format $cleaned =\n");
                     my $deparser = B::Deparse::->new();
                     $self->{fh}->print(
                         $deparser->indent($deparser->deparse_format($Bobj))
@@ -1173,7 +1207,7 @@ sub _dump_sv {
         #print "Idx: $idx Special keys:",join("-",keys %{$self->{special}}),"\n"
         #    if $DEBUG and keys %{$self->{special}};
 
-        print $self->diag_sv_idx($idx,"  ") if $DEBUG;
+        print "sv_dump Monitored:\n",$self->diag_sv_idx($idx,"  ") if $DEBUG;
 
 
         if (( $pre_dumped and !$self->{svon}{$idx}) or (!$self->{svon}{$idx} ? ($self->{svd}[$idx]<$depth or $name_diff) : undef) ) {
@@ -1236,6 +1270,7 @@ sub _dump_sv {
     } else {
         $ro=readonly $_[1] unless defined $ro;
     }
+    print "sv_dump: Postindexed\n" if $DEBUG;
     if ($depth==1) {
         # root level object. declare it
         if ($name ne $clean_name and $name!~/^\*/ and $self->{svc}[$idx]>1) {
@@ -1264,7 +1299,9 @@ sub _dump_sv {
         } else {
             $indent=0;
         }
+        print "toplevel\n" if $DEBUG;
     }
+
     my $iaddr=refaddr $item;
 
     $self->{fh}->print("\\")
@@ -1282,13 +1319,19 @@ sub _dump_sv {
     }
 
     unless ($iaddr) {
+        print "iaddr $glob\n" if $DEBUG;
         unless (defined $item) {
             $self->{fh}->print('undef');
         } else {
             if ($glob) {
-                $self->{fh}->print($glob);
-                if ($self->{style}{dumpglob} and !$self->{sv_glob_du}{$glob}++) {
-                    $self->_add_fix('glob',$_[1],$glob,$depth+1);
+                if ($glob=~/^\*Symbol::GEN/) {
+                    $self->_dump_symbol($_[1],$name,$glob,'deref',$depth);
+                } else
+                {
+                    $self->{fh}->print($glob);
+                    if ($self->{style}{dumpglob} and !$self->{sv_glob_du}{$glob}++) {
+                        $self->_add_fix('glob',$_[1],$glob,$depth+1);
+                    }
                 }
             } else {
                 $self->{fh}->print(_quote($item)); #;
@@ -1596,17 +1639,34 @@ sub _dump_code {
 sub _dump_format {
     # from link from [ysth]: http://groups.google.com/groups?selm=laUs8gzkgOlT092yn%40efn.org
     # translate arg (or reference to it) into a B::* object
-    my $Bobj = B::svref_2object(ref $_[0] ? $_[0] : \$_[0]);
+    my ($self,$item,$name,$indent)=@_;
+
+    my $Bobj = B::svref_2object($item);
     # if passed a glob or globref, get the format
     $Bobj = B::GV::FORM($Bobj) if ref $Bobj eq 'B::GV';
-
-    if (ref $Bobj ne 'B::FM') {
-        require Carp;
-        Carp::croak "deparse_format: expected a glob, globref, or format ref (".(ref $Bobj).")";
+    if (ref $Bobj eq 'B::FM') {
+        my $deparser = B::Deparse::->new();
+        my $format=$deparser->indent($deparser->deparse_format($Bobj));
+        my $end='_EOF_FORMAT_';
+        $end=~s/T(\d*)_/sprintf "T%02d_",($1||0)+1/e
+                while $format=~/$end/;
+        my $ind=$self->{style}{indent} ? ' ' x $indent : '';
+        $self->{fh}->print("do{ local *F;\n${ind}eval <<'$end'\nformat F =\n$format\n$end\n$ind*F{FORMAT} }");
     }
+}
 
-    my $deparser = B::Deparse::->new();
-    return $deparser->indent($deparser->deparse_format($Bobj));
+sub _dump_symbol {
+    my ($self,$item,$name,$glob,$deref,$depth)=@_;
+
+    my $ret="Symbol::gensym";
+    $ret="do{ require Symbol; $ret }"
+        unless $self->{reqs}{Symbol}++;
+    $ret="*{ $ret }"
+        if $deref;
+    $self->{fh}->print( $ret );
+    if ($self->{style}{dumpglob} and !$self->{sv_glob_du}{$glob}++) {
+        $self->_add_fix('glob',$_[1],$glob,$depth+1,$name);
+    }
 }
 
 sub _dump_rv {
@@ -1691,10 +1751,13 @@ sub _dump_rv {
         $self->{fh}->print(substr($self->{style}{bless},0,-1)," ");
     }
 
-    $DEBUG and print "  $type\n";
+    $DEBUG and print "  $type : Start typecheck\n";
     if ($type eq 'SCALAR' or $type eq 'REF' or $type eq 'GLOB') {
-        my ($pat,$mod)=regex($item);
-        if (defined $pat) {
+        my ($pat,$mod)=$type eq 'SCALAR' ? regex($item) : ();
+        my $glob=$type eq 'GLOB' ? globname $$item : '';
+        if ($glob=~/^\*Symbol::GEN/) {
+            $self->_dump_symbol($_[1],$name,$glob,0,$depth);
+        } elsif (defined $pat) {
             # its a regex
             $self->_dump_qr($pat,$mod);
         } else {
@@ -1703,15 +1766,16 @@ sub _dump_rv {
                                 $indent,'is_ref'
             );
             $self->{refdu}[$idx]=$ret if $ret;
-
         }
     } elsif ($type eq 'ARRAY') {
         $self->_dump_array($item,$depth,$dumped,$name,$indent);
     } elsif ($type eq 'HASH') {
         $self->_dump_hash($item,$depth,$dumped,$name,$indent,$addr,$class);
     } elsif ($type eq 'CODE') {
-
         $self->_dump_code($item,$name,$indent,$class);
+    } elsif ($type eq 'FORMAT') {
+        #$self->_dump_code($item,$name,$indent,$class); #muwhahahah
+        $self->_dump_format($item,$name,$indent);
     } else {
          Carp::confess "_dump_rv() can't handle '$type' objects yet\n :-(\n";
     }
@@ -1750,7 +1814,8 @@ If no names are provided then names are generated automatically based on the typ
 of object being dumped, with abreviations applied to compound class names.
 
 If called with arguments then returns the object itself, otherwise in list context
-returns the list of names in use.
+returns the list of names in use, or in scalar context a reference or undef. In void
+context with no arguments the names are cleared.
 
 B<NOTE:>
 Must be called before C<Data()> is called.
@@ -1766,8 +1831,10 @@ sub Names {
                                     $s
                                 } @$v ];
         return $self;
+    } elsif (! defined wantarray ) {
+        $self->{unames}=[];
     }
-    return wantarray ? @{$self->{unames}|[]} : $self->{unames}
+    return wantarray ? @{$self->{unames}||[]} : $self->{unames}
 }
 
 
@@ -2233,8 +2300,7 @@ sub AUTOLOAD {
 }
 
 unless (caller) {
-
-    $DEBUG=2;
+    #$DEBUG=2;
     {
         my ($a,$b);
         $a = [{ a => \$b }, { b => undef }];
