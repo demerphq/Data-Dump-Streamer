@@ -17,13 +17,13 @@ use warnings::register;
 #local $Data::Dumper::Useperl=1;
 
 require overload;
-use vars qw(@ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $VERSION $XS_VERSION $DEBUG $AUTOLOAD);
+use vars qw(@ISA @EXPORT @EXPORT_OK @EXPORT_FAIL %EXPORT_TAGS $VERSION $XS_VERSION $DEBUG $AUTOLOAD);
 
 $DEBUG=0;
 
 BEGIN {
-    $VERSION   ='1.04';
-    $XS_VERSION='1.0';
+    $VERSION   ='1.05';
+    $XS_VERSION='1.01';
     @ISA       = qw(Exporter DynaLoader);
 
     @EXPORT=qw(Dump);
@@ -49,6 +49,15 @@ BEGIN {
         globname
         is_numeric
 
+        all_keys
+        legal_keys
+        hidden_keys
+        lock_ref_keys
+        lock_keys
+        lock_ref_keys_plus
+        lock_keys_plus
+        SvREADONLY_ref
+        SvREFCNT_ref
 
         readonly_set
 
@@ -58,7 +67,13 @@ BEGIN {
    );#refshuffle
 
     %EXPORT_TAGS = (
-        undump => [ qw( alias_av alias_hv alias_ref make_ro ) ],
+        undump => [ qw( alias_av alias_hv alias_ref make_ro
+                        lock_ref_keys
+                        lock_keys
+                        lock_ref_keys_plus
+                        lock_keys_plus
+                      )
+                  ],
         special=> [ qw( readonly_set ) ],#refshuffle
         all    => [ @EXPORT,@EXPORT_OK ],
         alias  => [ qw( alias_av alias_hv alias_ref push_alias ) ],
@@ -77,6 +92,53 @@ BEGIN {
 
     #warn $VERSION;
     Data::Dump::Streamer->bootstrap($XS_VERSION);
+    if ($]<5.008) {
+        *hidden_keys=sub(\%)  { return () };
+        *legal_keys=sub(\%)   { return keys %{$_[0]} };
+        *all_keys=sub(\%\@\@) { @{$_[1]}=keys %{$_[0]}; @$_[2]=(); };
+        no strict 'refs';
+        foreach my $sub (qw(lock_keys lock_keys_plus )) {
+            *$sub=sub(\%;@) {
+                warnings::warn "$sub doesn't do anything before Perl 5.8.0\n";
+                return $_[0];
+            }
+        }
+        foreach my $sub (qw(lock_ref_keys lock_ref_keys_plus )) {
+            *$sub=sub($;@) {
+                warnings::warn "$sub doesn't do anything before Perl 5.8.0\n";
+                return $_[0];
+            }
+        }
+    } else {
+        eval <<'EO_HU'
+        use Hash::Util qw(lock_keys);
+        sub lock_ref_keys($;@) {
+            my $hash=shift;
+            Carp::confess("lock_ref_keys(): Not a ref '$hash'")
+                unless ref $hash;
+            lock_keys(%$hash,@_);
+            $hash
+        }
+EO_HU
+        ;
+        *lock_ref_keys_plus=sub($;@){
+            my ($hash,@keys)=@_;
+            my @delete;
+            Internals::hv_clear_placeholders(%$hash);
+            foreach my $key (@keys) {
+                unless (exists($hash->{$key})) {
+                    $hash->{$key}=undef;
+                    push @delete,$key;
+                }
+            }
+            SvREADONLY_ref($hash,1);
+            delete @{$hash}{@delete};
+            $hash
+        };
+        *lock_keys_plus=sub(\%;@){lock_ref_keys_plus(@_)};
+    }
+    my %fail=map { ( $_ => 1 ) } @EXPORT_FAIL;
+    @EXPORT_OK=grep { !$fail{$_} } @EXPORT_OK;
 }
 
 # NOTE
@@ -299,7 +361,7 @@ sub new {
         style => {
             hashsep      => ' => ',    # use this to seperate key vals
             bless        => 'bless()', # use this to bless ojects, needs fixing
-            indent       => 1,         # should we indent at all?
+            indent       => 2,    # should we indent at all?
             indentkeys   => 1,         # indent keys
             declare      => 0,         # predeclare vars? allows refs to root vars if 0
             sortkeys     => 'smart',   # sort ordering, smart, alpha, numeric, or subref
@@ -958,6 +1020,20 @@ sub _apply_fix {
                         $self->{fh}->print("$lhs = $rhs;\n");
                         $r=0
                     }
+                } elsif ($type eq 'tlock') {
+                    if ($self->{"refdu"}[$lhs] and ${$self->{"refdu"}[$lhs]}) {
+                        $self->{fh}->print(@$rhs ? "lock_keys_plus( $lhs, "
+                                             : "lock_keys( $lhs ",
+                                        join(", ",map{ _quote($_) } @$rhs),
+                                        ");\n");
+                        $r=0;
+                    }
+                } elsif ($type eq 'lock') {
+                    $self->{fh}->print(@$rhs ? "lock_keys_plus( $lhs, "
+                                             : "lock_keys( $lhs ",
+                                       join(", ",map{ _quote($_) } @$rhs),
+                                       ");\n");
+                    $r=0;
                 } elsif ($type eq 'thaw') {
                     if ($self->{refdu}[$lhs]) {
                         $lhs=$self->{"refn"}[$lhs];
@@ -1190,6 +1266,9 @@ sub Out {
 sub _dump_sv {
     my ($self,$item,$depth,$dumped,$name,$indent,$is_ref)=@_;
 
+
+    $self->{do_nl}=0;
+
     my $addr=refaddr(\$_[1]);
     my $idx=$self->{sv}{$addr};
     my $ro;
@@ -1227,42 +1306,45 @@ sub _dump_sv {
             print(($name_diff ? "Name diff" : "No name diff"), " $name, $clean_name","\n")
                 if $DEBUG;
 
+            my ($str,$ret)=('',undef);
+
             if ($is_ref) {
                 if ($self->{svd}[$idx]==1 && !$self->{style}{declare}
                     || ($pre_dumped && $$pre_dumped)
                 ) {
-                    $self->{fh}->print("\\$self->{svn}[$idx]");
+                    $str="\\$self->{svn}[$idx]";
                 } else {
 
                     my $need_do=($name=~/^\$\$\$+/);
                     if ($need_do) {
-                        $self->{fh}->print('do{my $f=')
+                        $str.='do{my $f=';
                     }
 
-                    $self->{fh}->print(!$self->{style}{verbose} ? "'R'" : _quote($DEBUG ? 'SR: ' : 'R: ', "$self->{svn}[$idx]")); #$name:
-                    my $done=\do{my $nope=0};
-                    $self->_add_fix('sv',$name,$idx,$done);
-
-                    if ($need_do) {
-                       $self->{fh}->print('}')
-                    }
-                    return $done
+                    $str.=!$self->{style}{verbose}
+                           ? "'R'" : _quote($DEBUG ? 'SR: ' : 'R: ',
+                                            "$self->{svn}[$idx]");
+                    $ret=\do{my $nope=0};
+                    $self->_add_fix('sv',$name,$idx,$ret);
+                    $str.="}" if ($need_do)
                 }
             } else {
                 if ($depth==1) {
                     if ($self->{style}{declare}) {
-                        $self->{fh}->print("my $name;\n");
+                        $str.="my $name;\n";
                     }
                     #push @{$self->{out_names}},$name;
                     #push @{$self->{declare}},$name;
-                    $self->{fh}->print("alias_ref(\\$name,\\$self->{svn}[$idx])");
+                    $str.="alias_ref(\\$name,\\$self->{svn}[$idx])";
                 } else {
-                    $self->{fh}->print(!$self->{style}{verbose} ? "'A'" : _quote("A: ",$self->{svn}[$idx]));
-                    return \$idx;
+                    $str.=!$self->{style}{verbose} ? "'A'" : _quote("A: ",$self->{svn}[$idx]);
+                    $ret=\$idx;
                 }
             }
-            return
-        } else{
+            $self->{buf}+=length($str);
+            $self->{buf}=length($1) if $str=~/\n([^\n]*)\s*\z/;
+            $self->{fh}->print($str);
+            return $ret ? $ret : ()
+        } else {
             # we've never seen it before and we need to dump it.
             $self->{svdu}[$idx]||=$dumped;
 
@@ -1303,6 +1385,7 @@ sub _dump_sv {
             my $str=($self->{style}{declare} && $name!~/^\*/ ? "my " : "")."$name = ";
             $self->{fh}->print($str);
             $indent=length($str);
+            $self->{buf}=0;
         } else {
             $indent=0;
         }
@@ -1322,37 +1405,46 @@ sub _dump_sv {
 
     if ($add_do) {
         #warn "\n!$ro && $is_ref && !blessed($_[1]) && !$glob";
-        $self->{fh}->print('do { my $v = ')
+        $self->{fh}->print('do { my $v = ');
+        $self->{buf}+=13;
     }
 
     unless ($iaddr) {
         print "iaddr $glob\n" if $DEBUG;
         unless (defined $item) {
             $self->{fh}->print('undef');
+            $self->{buf}+=5;
         } else {
             if ($glob) {
                 if ($glob=~/^\*Symbol::GEN/) {
                     $self->_dump_symbol($_[1],$name,$glob,'deref',$depth);
                 } else
                 {
+                    $self->{buf}+=length($glob);
                     $self->{fh}->print($glob);
                     if ($self->{style}{dumpglob} and !$self->{sv_glob_du}{$glob}++) {
                         $self->_add_fix('glob',$_[1],$glob,$depth+1);
                     }
                 }
             } else {
-                $self->{fh}->print(_quote($item)); #;
+                my $quoted=_quote($item);
+                $self->{buf}+=length($quoted);
+                $self->{buf}=length($1) if $quoted=~/\n([^\n]*)\s*\z/;
+                $self->{fh}->print($quoted); #;
             }
             if ($self->{style}{ro} and $ro and !$is_ref) {
                 $self->_add_fix("make_ro",$name);
             }
             #return
         }
+        $self->{do_nl}=0;
     } else {
+        $self->{do_nl}=1;
         $self->_dump_rv($item,$depth+1,$dumped,$name,$indent,$is_ref && !$add_do);
     }
     $self->{fh}->print(' }')
             if $add_do;
+
     return
 }
 
@@ -1486,10 +1578,14 @@ sub _dump_hash {
 
     warn "Keys: $keys : @$keys" if $keys and $DEBUG;
 
-    my $ind=($self->{style}{indent} && (!defined($self->{ref_hkcnt}{$addr}) or $self->{ref_hkcnt}{$addr}>1));
+    my $full_indent=$self->{style}{indent}>1;
+    my $ind=($self->{style}{indent}) &&
+            (!defined($self->{ref_hkcnt}{$addr}) or $self->{ref_hkcnt}{$addr}>1);
+
     $self->_brace($name,'{',$ind,$indent,$self->{ref_hkcnt}{$addr}) ;
 
     my $indkey=($ind && $self->{style}{indentkeys}) ? $self->{ref_hklen}{$addr} : 0;
+
     my $cindent=$indent;
     my $sep=$self->{style}{hashsep};
     if ($indkey) {
@@ -1497,24 +1593,41 @@ sub _dump_hash {
     }
     $DEBUG==10 and print "Indent $ind $indkey $cindent\n";
     my ($kc,$ix)=(0,0);
+    my $last_n=0;
+    my $ind_str=" " x $indent;
     while (defined(my $k=defined $keys ? $keys->[$ix++] : each %$item)) {
+        $last_n=0 if ref $item->{$k};
         if ( $kc ) {
-            $self->{fh}->print(",", $ind ? "\n".(" " x $indent) : "");
+            my $do_ind=$ind && !$last_n ;
+            $self->{fh}->print(",", $do_ind ? "\n$ind_str" : " ");
+            $self->{buf}++;
+            $self->{buf}=0 if $do_ind;
         } else {
+            #$self->{fh}->print("\n$ind_str") if !$last_n;
             $kc=1;
         }
         if ($indkey) {
             my $qk=_quotekey($k);
-            $self->{fh}->print($qk," " x ($indkey-length($qk)),$sep);
+            my $str=join "",$qk," " x ($indkey-length($qk)),$sep;
+            $self->{buf}+=length($str);
+            $self->{fh}->print($str);
         } else {
-            $self->{fh}->print( _quotekey($k),$sep);
+            my $str=_quotekey($k).$sep;
+            $self->{buf}+=length($str);
+            $self->{fh}->print($str);
         }
         my $alias=$self->_dump_sv($item->{$k},$depth+1,$dumped,
                             $self->_build_name($name,'{',$k),
                             $cindent
         );
+        if (!$full_indent and !$self->{do_nl} and $self->{buf}<60) {
+            #warn "$self->{buf}\n";
+            $last_n++;
+        } else {
+            #warn "$self->{buf}\n";
+            $last_n=0;
+        }
         if ($alias) {
-
             $self->_add_fix('alias_hv',
                             $self->_build_name($name,'%'),
                             _quote($k),
@@ -1528,19 +1641,30 @@ sub _dump_hash {
 
 sub _dump_array {
     my ($self,$item,$depth,$dumped,$name,$indent)=@_;
+    my $full_indent=$self->{style}{indent}>1;
     my $ind=$self->{style}{indent} && @$item>1;
 
     $self->_brace($name,'[',$ind,$indent,scalar @$item);
-
+    my $last_n=0;
+    my $ind_str=(" " x $indent);
     unless ($self->{style}{rle} ) {
         foreach my $k (0..$#$item) {
-
-            $self->{fh}->print(",",$ind ? "\n".(" " x $indent) : "" )
+            my $do_ind=$ind && (!$last_n || ref $item->[$k]);
+            $self->{fh}->print(",", $do_ind ? "\n$ind_str" : " ")
                 if $k;
+            $self->{buf}=0 if $do_ind and $k;
+
             my $alias=$self->_dump_sv($item->[$k],$depth+1,$dumped,
                                 $self->_build_name($name,'[',$k),
                                 $indent
             );
+
+            if (!$full_indent and !$self->{do_nl} and $self->{buf}<60) {
+                #warn "$last_n\n";
+                $last_n++;
+            } else {
+                $last_n=0;
+            }
             if ($alias) {
                 $self->_add_fix('alias_av',
                                 $self->_build_name($name,'@'),
@@ -1583,15 +1707,24 @@ sub _dump_array {
                     $count++;
                 }
             }
-            $self->{fh}->print(",",$ind ? "\n".(" " x $indent) : "" )
-                if $k;
 
-            $self->{fh}->print("( ")
-                if $count>1;
-           my $alias=$self->_dump_sv($item->[$k],$depth+1,$dumped,
+            my $do_ind=$ind && (!$last_n || ref $item->[$k]);
+            $self->{fh}->print(",", $do_ind ? "\n$ind_str" : " ")
+                if $k;
+            $self->{buf}=0 if $do_ind and $k;
+            if ($count>1){
+                $self->{fh}->print("( ");
+                $self->{buf}+=2;
+            }
+            my $alias=$self->_dump_sv($item->[$k],$depth+1,$dumped,
                                 $self->_build_name($name,'[',$k),
                                 $indent
             );
+            if (!$full_indent and !$self->{do_nl} and $self->{buf}<60) {
+                $last_n++;
+            } else {
+                $last_n=0;
+            }
             if ($alias) {
                 $self->_add_fix('alias_av',
                                 $self->_build_name($name,'@'),
@@ -1599,9 +1732,13 @@ sub _dump_array {
                                 $alias
                 );
             }
-            $self->{fh}->print(" ) x $count")
-                if $count>1;
+            if ($count>1) {
+                my $str=" ) x $count";
+                $self->{buf}+=length($str);
+                $self->{fh}->print($str);
+            }
             $k += $count;
+
         }
     }
     $self->_brace($name,']',$ind,$indent,scalar @$item);
@@ -1734,7 +1871,9 @@ sub _dump_rv {
 
 
     if (defined $class and $self->{style}{ignoreclass}{$class}) {
-        $self->{fh}->print(_quote("Ignored Obj [".overload::StrVal($item)."]"));
+        my $str=_quote("Ignored Obj [".overload::StrVal($item)."]");
+        $self->{buf}+=length($str);
+        $self->{fh}->print($str);
         return
     }
 
@@ -1746,39 +1885,43 @@ sub _dump_rv {
     }
     if ($idx) {
         my $pre_dumped=$self->{refdu}[$idx];
+        my $str="";
         if ($pre_dumped and $$pre_dumped) {
             # its been dumped totally
             $DEBUG and print "  predumped $self->{refn}[$idx]\n";
             if ($self->{refn}[$idx]=~/^[\@\%\&]/) {
-                $self->{fh}->print(
-                                   ($class ? 'bless( ' : ''),
+                if (SvREADONLY_ref($item)) {
+                    my @hidden_keys=sort(hidden_keys(%$item));
+                    $self->_add_fix('lock',$self->{refn}[$idx],\@hidden_keys);
+                }
+                $str=join "",($class ? 'bless( ' : ''),
                                    '\\'.$self->{refn}[$idx],
-                                   ($class ? ', '._quote($class).' )' : '')
-                                  );
+                                   ($class ? ', '._quote($class).' )' : '');
             } else {
-                $self->{fh}->print($self->{refn}[$idx]);
+                $str=$self->{refn}[$idx];
             }
+            $self->{buf}+=length($str);
+            $self->{fh}->print($str);
             return
         } elsif ($pre_dumped or $self->{refd}[$idx] < $depth) {
             $DEBUG and print "  inprocess or depth violation: $self->{refd}[$idx] < $depth\n";
             # we are in the process of dumping it
             # output a place holder and add a fix statement
-            if ($self->{refn}[$idx]=~/^[\@\%\&]/ and !$self->{style}{declare}) {
-                $self->{fh}->print(
-                                   ( $class ? 'bless( ' : '' ),
-                                   '\\'.$self->{refn}[$idx],
-                                   ( $class ? ', '._quote($class).' )' : '' )
-                                  );
-            } else {
 
-                $self->{fh}->print(
-                    $add_do ? 'do { my $v = ' : '',
+            if ($self->{refn}[$idx]=~/^[\@\%\&]/ and !$self->{style}{declare}) {
+                $str=join"",( $class ? 'bless( ' : '' ),
+                               '\\'.$self->{refn}[$idx],
+                               ( $class ? ', '._quote($class).' )' : '' );
+            } else {
+                $str=join"",$add_do ? 'do { my $v = ' : '',
                     !$self->{style}{verbose} ? "'V'" : _quote("V: ",$self->{refn}[$idx]),
-                    $add_do ? ' }' : '',
-                );
+                    $add_do ? ' }' : '';
+
                 #Carp::cluck "$name $self->{refd}[$idx] < $depth" if $name=~/\*/;
                 $self->_add_fix('ref',$name,$idx,$class);
             }
+            $self->{buf}+=length($str);
+            $self->{fh}->print($str);
             return
         }
         $self->{refdu}[$idx]||=$dumped;
@@ -1786,6 +1929,23 @@ sub _dump_rv {
     } else {
         Carp::confess "Unhandled object '$item'\n";
     }
+    $self->{do_nl}=1;
+    my $add_lock=($type eq 'HASH') && SvREADONLY_ref($item);
+    my $fix_lock=0;
+    my @hidden_keys=$add_lock ? sort(hidden_keys(%$item)) : ();
+    if ($add_lock) {
+        #warn "$name\n";
+        if ($name!~/^\$/) {
+            $fix_lock=1;
+            $add_lock=0;
+        } else  {
+            $self->{fh}->print("lock_ref_keys",
+                           @hidden_keys ? '_plus' : '',
+                           '( '
+                          );
+        }
+    }
+
 
     my $add_bless=defined($class) && ($name!~/^[\@\%\&]/);
     if ($add_bless) {
@@ -1835,7 +1995,16 @@ sub _dump_rv {
                        and !$frozen; # $frozen is only true f a replacement was used
             }
         }
+    } elsif ($fix_lock && !defined($class)) {
+        $self->_add_fix('lock',$name,\@hidden_keys);
     }
+    if ($add_lock) {
+        if (@hidden_keys) {
+            $self->{fh}->print(", ",join(", ",map {_quote($_)} @hidden_keys));
+        }
+        $self->{fh}->print(" )");
+    }
+    $self->{do_nl}=1;
     return
 }
 
@@ -1914,18 +2083,29 @@ references to top level objects can be made at any time.
 
 Defaults to False.
 
+=for UEDIT
+sub Indent      {}
+
 =item Indent
 
-=item Indent BOOL
+=item Indent INT
 
-If Indent is True then data is output in an indented and fairly neat fashion, with
-hash key/value pairs and array values each on their own line.
+If Indent is True then data is output in an indented and fairly neat fashion.
+If the value is 2 then hash key/value pairs and array values each on their own line.
+If the value is 1 then a "smart" indenting mode is activated where multiple key/value
+or values may be printed to the same line. The heuristics for this mode are still
+experimental so it may occassional not indent very nicely.
+
+Default is Indent(2)
 
 If indent is False then no indentation is done.
 
 Defaults to True.
 
 Newlines are appended to each statement regardless of this value.
+
+=for UEDIT
+sub IndentKeys      {}
 
 =item Indentkeys
 
@@ -1940,6 +2120,10 @@ Defaults to True.
 
 B<NOTE:>
 Must be set before C<Data()> is called.
+
+=for UEDIT
+sub SortKeys      {}
+sub Sortkeys      {}
 
 =item SortKeys
 
@@ -1977,6 +2161,8 @@ expectations formed by Data::Dumper. Data::Dumper provides the former, but the l
 is consistant with the method naming scheme in this module. So in the spirit of TIMTOWTDI
 you can use either. :-)
 
+=for UEDIT
+sub Hashkeys      {}
 
 =item HashKeys
 
@@ -2005,6 +2191,9 @@ details.
 B<Note> that C<Hashkeys()> is a synonym for C<HashKeys()> for compatibility with
 expectations formed by Data::Dumper with regard to the method Sortkeys(). See L<SortKeys>
 for details of this method and the reason behind the synonym.
+
+=for UEDIT
+sub Verbose      {}
 
 =item Verbose
 
@@ -2209,11 +2398,7 @@ Must be set before C<Data()> is called.
 
 =for UEDIT
 sub Declare     {}
-sub Indent      {}
 sub IndentCols  {}
-sub IndentKeys  {}
-sub SortKeys    {}
-sub Verbose     {}
 sub DumpGlob    {}
 sub Deparse     {}
 sub CodeStub    {}
