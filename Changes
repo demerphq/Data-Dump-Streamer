@@ -55,5 +55,7 @@ and because I hate modules that dont automatically install. If you do
 
 then it will get installed.
 
+1.08
 
+Doc fixes, and removed a relic of earlier development that polluted @INC.
 

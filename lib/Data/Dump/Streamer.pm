@@ -1,7 +1,6 @@
 package Data::Dump::Streamer;
 use strict;
 use warnings;
-use lib 'D:/dev/Data-Dump-Streamer/lib';
 use Exporter;
 use DynaLoader;
 use Text::Balanced qw(extract_bracketed);
@@ -22,8 +21,8 @@ use vars qw(@ISA @EXPORT @EXPORT_OK @EXPORT_FAIL %EXPORT_TAGS $VERSION $XS_VERSI
 $DEBUG=0;
 
 BEGIN {
-    $VERSION   ='1.07';
-    $XS_VERSION='1.07';
+    $VERSION   ='1.08';
+    $XS_VERSION='1.08';
     @ISA       = qw(Exporter DynaLoader);
 
     @EXPORT=qw(Dump);
@@ -2749,11 +2748,15 @@ Jeff Pinyan, Richard Clamp, and Gurusamy Sarathy.
 Thanks to Dan Brook (broquaint) for testing and moral support. Without his
 encouragement the 1.0 release would never have been written.
 
-Thanks to Yitzchak Scott-Thoennes for the format dumping code.
+Thanks to Yitzchak Scott-Thoennes for the format dumping code and other input.
+And to eric256 for noticing something... :-)
 
 =head1 SEE ALSO
 
-L<perl>. L<Perlmonks|http://www.perlmonks.org>
+L<perl>. L<Perlmonks|http://www.perlmonks.org>. L<DDS|DDS> which is an alias to this
+module for easier typing and one-liner support.
+
+And of course www.perlmonks.org
 
 =cut
 
