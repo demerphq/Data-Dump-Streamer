@@ -25,8 +25,8 @@ use vars qw(
 $DEBUG=0;
 
 BEGIN {
-    $VERSION   ='1.09';
-    $XS_VERSION='1.08';
+    $VERSION   ='1.10';
+    $XS_VERSION='1.10';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
 
@@ -38,6 +38,9 @@ BEGIN {
         alias_hv
         alias_ref
         push_alias
+        dualvar
+
+        alias_to
 
         blessed
         reftype
@@ -48,6 +51,7 @@ BEGIN {
         regex
         readonly
         make_ro
+        _make_ro
         reftype_or_glob
         refaddr_or_glob
         globname
@@ -68,7 +72,8 @@ BEGIN {
         Dumper
         DDumper
 
-   );#refshuffle
+
+   );
 
     %EXPORT_TAGS = (
         undump => [ qw( alias_av alias_hv alias_ref make_ro
@@ -76,15 +81,18 @@ BEGIN {
                         lock_keys
                         lock_ref_keys_plus
                         lock_keys_plus
+                        alias_to
+                        dualvar
                       )
                   ],
-        special=> [ qw( readonly_set ) ],#refshuffle
+        special=> [ qw( readonly_set ) ],
         all    => [ @EXPORT,@EXPORT_OK ],
         alias  => [ qw( alias_av alias_hv alias_ref push_alias ) ],
         bin    => [ @EXPORT_OK ],
         Dumper => [ qw( Dumper DDumper )],
         util   => [ qw (
-                       blessed reftype refaddr refcount sv_refcount
+                        dualvar
+                        blessed reftype refaddr refcount sv_refcount
                         readonly looks_like_number regex is_numeric
                         make_ro readonly_set reftype_or_glob
                         refaddr_or_glob globname
@@ -93,6 +101,8 @@ BEGIN {
 
     );
 
+
+    sub alias_to { return shift }
 
     #warn $VERSION;
     Data::Dump::Streamer->bootstrap($XS_VERSION);
@@ -176,7 +186,7 @@ EO_HU
 # any of the _dump_foo methods will call _add_fix and add to the list of fixes.
 # after every root level _dump_sv call from Out() any fix statements possible to be
 # resolved will be emitted and removed from the fix list. This happens in
-# _apply_fix, which is another piece of horrible code.
+# _dump_apply_fix, which is another piece of horrible code.
 #
 # Anyway, its terribly ugly, but for anything I can think to throw at it it works.
 # demerphq
@@ -184,11 +194,12 @@ EO_HU
 =head1 NAME
 
 Data::Dump::Streamer - Stream a highly accurate breadth first data dump in perl code form to a var or file.
+(Also known as 'DDS')
 
 =head1 SYNOPSIS
 
   use Data::Dump::Streamer;
-  use DDS;                           # or optionally if installed
+  use DDS;                           # optionally installed alias
 
   Dump($x,$y);                       # Prints to STDOUT
   Dump($x,$y)->Out();                #   "          "
@@ -294,6 +305,23 @@ The order in which the rules are applied is:
   3. Generic via SortKeys() settings
   4. Use perls internal hash ordering.
 
+=head3 Controlling Array Presentation and Run Length Encoding
+
+By default Data::Dump::Streamer will "run length encode" array values.
+This means that when an array value is simple (ie, its not referenced and
+does contain a reference) and is repeated mutliple times the output will
+be single a list multiplier statement, and not each item output seperately.
+Thus: C<Dump([0,0,0,0])> will be output somthing like
+
+   $ARRAY1 = [ (0) x 4 ];
+
+This is particularly useful when dealing with large arrays that are only
+partly filled, and when accidentally the array has been made very large,
+such as with the improper use of pseudo-hash notation.
+
+To disable this feature you may set the Rle() property to FALSE, by default
+it is enabled and set to TRUE.
+
 =head3 Controlling Object Representation (Freeze/Thaw)
 
 This module provides hooks for specially handling objects. Freeze/Thaw for generic
@@ -398,6 +426,9 @@ sub new {
             ignoreclass  => {},        # ignore classes
             indentcols   => 2,         # indent this numbe of cols
             ro           => 1,         # track readonly vars
+            dualvars     => 1,         # dump dualvars
+
+            purity       => 1,         # test
 
             # use this if deparse is 0
             codestub     => 'sub { Carp::confess "Dumped code stub!" }',
@@ -406,8 +437,9 @@ sub new {
             deparseopts  => ["-sCi2v'Useless const omitted'"],
             special     =>0,
 
-            # not yet implemented
 
+
+            # not yet implemented
             array_warn  => 10_000,    # warn if an array has more than this number of elements
             array_chop  => 32_767,    # chop arrays over this size
             array_max   => 1_000_000, # die if arrays have more than this size
@@ -882,12 +914,7 @@ sub _add_queue {
         push @$queue,[\$item,$depth,$name,$rcount,$arg];
     } elsif($self->{style}{dumpglob}) {
         local @_;
-        foreach my $t (qw(SCALAR HASH ARRAY),
-            ($self->{style}{deparse} && $self->{style}{deparseglob}
-            ? 'CODE' : () ),
-            ($self->{style}{deparse} && $self->{style}{deparseglob}
-            ? 'FORMAT' : () )
-            ) {
+        foreach my $t ($self->_glob_slots('FORMAT')) {
 
             #warn $type.":$t\n";
             #register?
@@ -1057,27 +1084,54 @@ sub Data {
 
 sub _add_fix {
     my ($self,@args)=@_;
+    # 'var','glob','method call','lock','ref','sv','#'
     # TODO
     # add a fix statement to the list of fixes.
+    my $fix=@args==1 ? shift @args : [@args];
+    unless ($fix->[0]=~/^(var|glob|method call|ref|sv|#|sub call|lock)$/) {
+        Carp::confess "Unknown variant:".Dumper($fix);
+    }
+
     if ($args[0] eq 'var') {
-        unshift @{$self->{fix}},@args==1 ? shift @args : [@args];
+        unshift @{$self->{fix}},$fix;
     }   else {
-        push @{$self->{fix}},@args==1 ? shift @args : [@args];
+        push @{$self->{fix}},$fix;
     }
 }
 
-sub _apply_fix {
+sub _glob_slots {
+    my ($self,$inc_format)=@_;
+    # $inc_format is for a special case.
+    return (
+            qw(SCALAR HASH ARRAY),
+             (($self->{style}{deparse} && $self->{style}{deparseglob})
+                ? 'CODE' : ()),
+             (($inc_format && $self->{style}{deparse} && $self->{style}{deparseglob})
+                ? 'FORMAT' : () )
+           );
+}
+
+sub _dump_apply_fix { #handle fix statements and GLOB's here.
     my ($self,@args)=@_;
     # go through the fix statements and out any that are
     # now fully dumped.
+    # curently the following types are grokked:
+    # 'var','glob','method call','tlock','ref','sv','#'
+
     my @globs;
     GLOB:{
         @globs=();
         @{$self->{fix}}=grep {
-            my $r=1;
-            if (ref $_) {
-                my ($type,$lhs,$rhs,$class)=@$_;
-                if ($type eq 'sv') {
+            my $keep=1;
+            my $fix=$_;
+            if (ref $fix) {
+                my ($type,$lhs,$rhs,$class)=@$fix;
+
+                if ($type eq '#') {
+                    $self->{fh}->print(map "# $_\n",@$fix[0..$#$fix]);
+                    $keep=0;
+                } elsif ($type eq 'sv') {
+
                     my $dref=$_->[-1];
                     if ($self->{$type."du"}[$rhs] and ${$self->{$type."du"}[$rhs]}) {
                         $rhs=$self->{$type."n"}[$rhs];
@@ -1088,9 +1142,10 @@ sub _apply_fix {
                         }
                         $self->{fh}->print("$lhs = $rhs;\n");
                         $$dref=1 if ref $dref;
-                        $r=0
+                        $keep=0
                     }
                 } elsif ($type eq 'ref') {
+
                     if ($self->{$type."du"}[$rhs] and ${$self->{$type."du"}[$rhs]}) {
 
                         $rhs=$self->{$type."n"}[$rhs];
@@ -1101,59 +1156,53 @@ sub _apply_fix {
                                 if $class;
                         } # Warn if
                         $self->{fh}->print("$lhs = $rhs;\n");
-                        $r=0
+                        $keep=0
                     }
-                } elsif ($type eq 'tlock') {
-                    if ($self->{"refdu"}[$lhs] and ${$self->{"refdu"}[$lhs]}) {
+                } elsif ($type eq 'lock') {
+                    if ($self->{refdu}[$lhs] and ${$self->{"refdu"}[$lhs]}) {
+                        $lhs=$self->{"refn"}[$lhs];
                         $self->{fh}->print(@$rhs ? "lock_keys_plus( $lhs, "
                                              : "lock_keys( $lhs ",
                                         join(", ",map{ _quote($_) } @$rhs),
                                         ");\n");
-                        $r=0;
+                        $keep=0;
                     }
-                } elsif ($type eq 'lock') {
-                    $self->{fh}->print(@$rhs ? "lock_keys_plus( $lhs, "
-                                             : "lock_keys( $lhs ",
-                                       join(", ",map{ _quote($_) } @$rhs),
-                                       ");\n");
-                    $r=0;
-                } elsif ($type eq 'thaw') {
-                    if ($self->{refdu}[$lhs]) {
+                } elsif ($type eq 'method call') {
+                    if ($self->{refdu}[$lhs] and ${$self->{"refdu"}[$lhs]}) {
                         $lhs=$self->{"refn"}[$lhs];
-                        $self->{fh}->print("$lhs->$rhs();\n");
-                        $r=0
+                        my @args=@$_[3..$#$_];
+                        $self->{fh}->print("$lhs->$rhs(".join(", ",@args).");\n");
+                        $keep=0
                     }
                 } elsif ($type eq 'glob') {
                     push @globs,$_;
-                    $r=0;
+                    $keep=0;
                 } elsif ($type eq 'var') {
                     $rhs="\\".$rhs;
                     $rhs="bless( $rhs, "._quote($class).' )'
                         if $class;
                     $self->{fh}->print(($self->{style}{declare} ? 'my ' : ""),"$lhs = $rhs;\n");
-                    $r=0;
-                }  else {
-                    my @r=grep { ref $_ and (!$self->{svdu}[$$_] or !${$self->{svdu}[$$_]}) } @$_;
+                    $keep=0;
+                }  elsif ($type eq 'sub call') {
+                    my @r=grep { ref $_ and (!$self->{svdu}[$$_] or !${$self->{svdu}[$$_]}) } @$fix;
                     unless (@r) {
-                        my ($sub,@args)=map { ref $_ ? $self->{svn}[$$_] : $_ } @$_;
+                        my ($type,$sub,@args)=map { ref $_ ? $self->{svn}[$$_] : $_ } @$fix;
                         $self->{fh}->print("$sub(",join(", ",@args),");\n");
-                        $r=0;
+                        $keep=0;
                     }
+                } else {
+                    die Dumper($fix);
                 }
 
             }
-            $r;
+            $keep;
         } @{$self->{fix}};
         foreach my $glob (@globs) {
             my ($type,$lhs,$rhs,$depth,$name)=@$glob;
             print "Symbol: $name\n" if $DEBUG and $name;
             local @_;
             $name=$name ? '*'.$name : $rhs;
-            foreach my $t (qw(SCALAR HASH ARRAY),
-                ($self->{style}{deparse} && $self->{style}{deparseglob}
-                ? 'CODE' : () ),
-
-                )
+            foreach my $t ($self->_glob_slots(''))
             {
                 my $v=*$lhs{$t};
                 next unless defined $v;
@@ -1171,10 +1220,9 @@ sub _apply_fix {
                     next;
                 }
 
-
                 $self->{fh}->print("$name = ");
                 my $ret=$self->_dump_sv(*$lhs{$t},$depth,\$dumped,$name,length($name)+3);
-                Carp::confess "\nUnhandled alias value '$ret' returned to _apply_fix()!"
+                Carp::confess "\nUnhandled alias value '$ret' returned to _dump_apply_fix()!"
                     if $ret;
                 $self->{fh}->print(";\n");
                 $dumped=1;
@@ -1244,7 +1292,7 @@ All should DWIM.
 #         _dump_hash
 #         _dump_code
 #         _dump_qr
-#     _apply_fix
+#     _dump_apply_fix
 #       (which may call)
 #       _dump_sv
 #
@@ -1256,8 +1304,8 @@ All should DWIM.
 # handles simple values and globs, and works with _dump_rv to handle
 # references to scalars correctly. If "fix" statements are required
 # to complete the definition of the structure (self referential structures)
-# then _add_fix adds them to the list, and _apply_fix pulls them off.
-# note that _apply_fix can also call _dump_sv if needed (to handle globs),
+# then _add_fix adds them to the list, and _dump_apply_fix pulls them off.
+# note that _dump_apply_fix can also call _dump_sv if needed (to handle globs),
 # and will also emit fix statements as early as possible. no require/use
 # logic is currently in place. its the evalers responsibility to use the mod
 # w/the right tags for now...
@@ -1329,7 +1377,7 @@ sub Out {
             if $ret;
         $self->{fh}->print(";\n");
         $dumped=1;
-        $self->_apply_fix();
+        $self->_dump_apply_fix();
     }
     $self->{fh}->print($namestr) if $namestr;
 
@@ -1397,18 +1445,27 @@ sub _dump_sv {
                 ) {
                     $str="\\$self->{svn}[$idx]";
                 } else {
+                    #see the 'Many refs' tests in t\dump.t for
+                    #why this is here. basically we need to
+                    #ensure the ref is modifiable. If its two $'s
+                    #then its modifable anyway, more and it wont be.
+                    # $ref=\\$x; $ref=RW $$ref=RO $$$ref=$x=RW
+                    unless ($self->{style}{purity}) {
+                        $str="\\$self->{svn}[$idx]";
+                    } else {
+                        my $need_do=($name=~/^\$\$\$+/);
+                        if ($need_do) {
+                            $str.='do{my $f=';
+                        }
 
-                    my $need_do=($name=~/^\$\$\$+/);
-                    if ($need_do) {
-                        $str.='do{my $f=';
+                        $str.=!$self->{style}{verbose}
+                               ? "'R'" : _quote($DEBUG ? 'SR: ' : 'R: ',
+                                                "$self->{svn}[$idx]");
+                        $ret=\do{my $nope=0};
+                        $self->_add_fix('sv',$name,$idx,$ret);
+
+                        $str.="}" if ($need_do)
                     }
-
-                    $str.=!$self->{style}{verbose}
-                           ? "'R'" : _quote($DEBUG ? 'SR: ' : 'R: ',
-                                            "$self->{svn}[$idx]");
-                    $ret=\do{my $nope=0};
-                    $self->_add_fix('sv',$name,$idx,$ret);
-                    $str.="}" if ($need_do)
                 }
             } else {
                 if ($depth==1) {
@@ -1418,9 +1475,12 @@ sub _dump_sv {
                     #push @{$self->{out_names}},$name;
                     #push @{$self->{declare}},$name;
                     $str.="alias_ref(\\$name,\\$self->{svn}[$idx])";
-                } else {
+                } elsif ($self->{style}{purity}) {
                     $str.=!$self->{style}{verbose} ? "'A'" : _quote("A: ",$self->{svn}[$idx]);
                     $ret=\$idx;
+                } else {
+                    $str.="alias_to($self->{svn}[$idx])";
+                    $ret='';
                 }
             }
             $self->{buf}+=length($str);
@@ -1481,7 +1541,7 @@ sub _dump_sv {
         if $is_ref;
 
     my $glob=globname $item;
-    my $add_do=!$ro && $is_ref
+    my $add_do=$self->{style}{purity} && !$ro && $is_ref
                && {''=>1,SCALAR=>1,REF=>0}->{reftype($_[1])}
                && !blessed($_[1]) && !$glob;
 
@@ -1498,6 +1558,10 @@ sub _dump_sv {
             $self->{fh}->print('undef');
             $self->{buf}+=5;
         } else {
+            my $is_ro=($self->{style}{ro} && $ro && !$is_ref);
+            if ($is_ro and !$self->{style}{purity}) {
+                $self->{fh}->print("make_ro( ");
+            }
             if ($glob) {
                 if ($glob=~/^\*Symbol::GEN/) {
                     $self->_dump_symbol($_[1],$name,$glob,'deref',$depth);
@@ -1505,18 +1569,31 @@ sub _dump_sv {
                 {
                     $self->{buf}+=length($glob);
                     $self->{fh}->print($glob);
-                    if ($self->{style}{dumpglob} and !$self->{sv_glob_du}{$glob}++) {
+                    if ($self->{style}{dumpglob} and
+                        !$self->{sv_glob_du}{$glob}++) {
                         $self->_add_fix('glob',$_[1],$glob,$depth+1);
                     }
                 }
             } else {
-                my $quoted=_quote($item);
+                my $quoted;
+                if ($self->{style}{dualvars}) {
+                    no warnings 'numeric';
+                    if (_could_be_dualvar($item) && 0+$item ne $item && "$item" != $item ) {
+                        $quoted="dualvar( ".join(", ",0+$item,_quote("$item"))." )";
+                    } else {
+                        $quoted=_quote($item);
+                    }
+                } else {
+                    $quoted=_quote($item);
+                }
                 $self->{buf}+=length($quoted);
                 $self->{buf}=length($1) if $quoted=~/\n([^\n]*)\s*\z/;
                 $self->{fh}->print($quoted); #;
             }
-            if ($self->{style}{ro} and $ro and !$is_ref) {
-                $self->_add_fix("make_ro",$name);
+            if ($is_ro && $self->{style}{purity}) {
+                $self->_add_fix('sub call','make_ro',$name);
+            } elsif ($is_ro) {
+                $self->{fh}->print(' )');
             }
             #return
         }
@@ -1719,7 +1796,7 @@ sub _dump_hash {
             $last_n=0;
         }
         if ($alias) {
-            $self->_add_fix('alias_hv',
+            $self->_add_fix('sub call','alias_hv',
                             $self->_build_name($name,'%'),
                             _quote($k),
                             $alias
@@ -1757,7 +1834,7 @@ sub _dump_array {
                 $last_n=0;
             }
             if ($alias) {
-                $self->_add_fix('alias_av',
+                $self->_add_fix('sub call','alias_av',
                                 $self->_build_name($name,'@'),
                                 $k,
                                 $alias
@@ -1817,7 +1894,7 @@ sub _dump_array {
                 $last_n=0;
             }
             if ($alias) {
-                $self->_add_fix('alias_av',
+                $self->_add_fix('sub call','alias_av',
                                 $self->_build_name($name,'@'),
                                 $k,
                                 $alias
@@ -1983,7 +2060,7 @@ sub _dump_rv {
             if ($self->{refn}[$idx]=~/^[\@\%\&]/) {
                 if (SvREADONLY_ref($item)) {
                     my @hidden_keys=sort(hidden_keys(%$item));
-                    $self->_add_fix('lock',$self->{refn}[$idx],\@hidden_keys);
+                    $self->_add_fix('lock',$idx,\@hidden_keys);
                 }
                 $str=join "",($class ? 'bless( ' : ''),
                                    '\\'.$self->{refn}[$idx],
@@ -1998,18 +2075,22 @@ sub _dump_rv {
             $DEBUG and print "  inprocess or depth violation: $self->{refd}[$idx] < $depth\n";
             # we are in the process of dumping it
             # output a place holder and add a fix statement
-
-            if ($self->{refn}[$idx]=~/^[\@\%\&]/ and !$self->{style}{declare}) {
+            # XXX is this sigil test correct? why not $?
+            if ($self->{refn}[$idx]=~/^[\@\%\&]/ and (!$self->{style}{declare})) {
                 $str=join"",( $class ? 'bless( ' : '' ),
                                '\\'.$self->{refn}[$idx],
                                ( $class ? ', '._quote($class).' )' : '' );
             } else {
-                $str=join"",$add_do ? 'do { my $v = ' : '',
-                    !$self->{style}{verbose} ? "'V'" : _quote("V: ",$self->{refn}[$idx]),
-                    $add_do ? ' }' : '';
+                if ($self->{style}{purity}) {
+                    $str=join"",$add_do ? 'do { my $v = ' : '',
+                        !$self->{style}{verbose} ? "'V'" : _quote("V: ",$self->{refn}[$idx]),
+                        $add_do ? ' }' : '';
 
-                #Carp::cluck "$name $self->{refd}[$idx] < $depth" if $name=~/\*/;
-                $self->_add_fix('ref',$name,$idx,$class);
+                    #Carp::cluck "$name $self->{refd}[$idx] < $depth" if $name=~/\*/;
+                    $self->_add_fix('ref',$name,$idx,$class);
+                } else {
+                    $str=$self->{refn}[$idx];
+                }
             }
             $self->{buf}+=length($str);
             $self->{fh}->print($str);
@@ -2079,7 +2160,7 @@ sub _dump_rv {
                 if ($now) {
                     $self->{fh}->print("->$meth()");
                 } else {
-                    $self->_add_fix("thaw",$idx,$meth);
+                    $self->_add_fix('method call',$idx,$meth); #thaw
                 }
                 $item->$meth()
                     if ($self->{style}{freezeclass}{$class}||$self->{style}{freeze})
@@ -2087,7 +2168,7 @@ sub _dump_rv {
             }
         }
     } elsif ($fix_lock && !defined($class)) {
-        $self->_add_fix('lock',$name,\@hidden_keys);
+        $self->_add_fix('lock',$idx,\@hidden_keys);
     }
     if ($add_lock) {
         if (@hidden_keys) {
@@ -2138,7 +2219,27 @@ sub Names {
     return wantarray ? @{$self->{unames}||[]} : $self->{unames}
 }
 
+=for UEDIT
+sub Purity {}
 
+=item Purity
+
+=item Purity BOOL
+
+This option can be used to set the level of purity in the output. It defaults
+to TRUE, which results in the module doing its best to ensure that the resulting
+dump when eval()ed is precisely the same as the input. However, at times such as
+debugging this can be tedius, resulting in extremely long dumps with many "fix"
+statements involved.  By setting Purity to FALSE the resulting output won't
+necessarily be legal Perl, but it will be more legible. In this mode the
+output is boardly similar to that of the default setting of Data::Dumper (Purity(0)).
+When set to TRUE the behaviour is likewise similar to Data::Dumper in Purity(1)
+but more accurate.
+
+When Purity() is set to FALSE aliases will be output with a function call wrapper
+of 'alias_to' whose argument will be the value the item is an alias to. This wrapper
+does nothing, and is only there as a visual cue. Likewise, 'make_ro' will be output
+when the value was readonly, and again the effect is cosmetic only.
 
 =item To
 
@@ -2162,6 +2263,9 @@ sub To {
     }
     return $self->{fh};
 }
+
+=for UEDIT
+sub Declare     {}
 
 =item Declare
 
@@ -2312,6 +2416,9 @@ Defaults to True.
 B<NOTE:>
 Must be set before C<Data()> is called.
 
+=for UEDIT
+sub DumpGlob {}
+
 =item DumpGlob
 
 =item DumpGlob BOOL
@@ -2324,6 +2431,9 @@ Defaults to True
 B<NOTE:>
 Must be set before C<Data()> is called.
 
+=for UEDIT
+sub Deparse {}
+
 =item Deparse
 
 =item Deparse BOOL
@@ -2334,6 +2444,9 @@ the setting of C<CodeStub()>.
 
 Caveat Emptor, dumping subroutine references is hardly a secure act, and it is
 provided here only for convenience.
+
+=for UEDIT
+sub DeparseOpts {}
 
 =item DeparseOpts
 
@@ -2348,6 +2461,9 @@ contain a list of arguments. If no arguments are provided returns a
 an array ref of arguments in scalar context, and a list of arguments in
 list context.
 
+=for UEDIT
+sub CodeStub {}
+
 =item CodeStub
 
 =item CodeStub STRING
@@ -2357,6 +2473,9 @@ references. Its the users responsibility to make sure its compilable
 and blessable.
 
 Defaults to 'sub { Carp::confess "Dumped code stub!" }'
+
+=for UEDIT
+sub FormatStub {}
 
 =item FormatStub
 
@@ -2368,23 +2487,53 @@ and blessable.
 
 Defaults to 'do{ local *F; eval "format F =\nFormat Stub\n.\n"; *F{FORMAT} }'
 
+=for UEDIT
+sub DeparseGlob {}
+
 =item DeparseGlob
 
 =item DeparseGlob BOOL
 
-If Deparse is True then this style attribute will determine if subroutines
+If Deparse is TRUE then this style attribute will determine if subroutines
 and FORMAT's contained in globs that are dumped will be deparsed or not.
 
 Defaults to True.
+
+=for UEDIT
+sub DualVars {}
+sub Dualvars {}
+
+=item Dualvars
+
+=item Dualvars BOOL
+
+=item Dualvars
+
+=item Dualvars BOOL
+
+If TRUE then dualvar checking will occur and the required statements emitted
+to recreate dualvars when they are encountered, otherwise items will be dumped
+in their stringified form always. It defaults to TRUE.
+
+=for UEDIT
+sub Rle {}
+sub RLE {}
 
 =item Rle
 
 =item Rle BOOL
 
+=item RLE
+
+=item RLE BOOL
+
 If True then arrays will be run length encoded using the C<x> operator.
 What this means is that if an array contains repeated elements then instead
 of outputting each and every one a list multiplier will be output. This means
 that considerably less space is taken to dump redundant data.
+
+=for UEDIT
+sub Freeze {}
 
 =item Freeze
 
@@ -2398,6 +2547,9 @@ have that used _instead_ of the real object reference.
 B<NOTE:>
 Must be set before C<Data()> is called.
 
+=for UEDIT
+sub Thaw {}
+
 =item Thaw
 
 =item Thaw METHOD
@@ -2407,6 +2559,9 @@ are dumped.
 
 B<NOTE:>
 Must be set before C<Data()> is called.
+
+=for UEDIT
+sub FreezeClass {}
 
 =item FreezeClass
 
@@ -2428,6 +2583,10 @@ Called with no arguments in scalar content returns a reference to the hash.
 B<NOTE:>
 Must be set before C<Data()> is called.
 
+=for UEDIT
+sub ThawClass   {}
+
+
 =item ThawClass
 
 =item ThawClass CLASS
@@ -2442,19 +2601,7 @@ existance. Has the same calling semantics as FreezeClass.
 B<NOTE:>
 Must be set before C<Data()> is called.
 
-=item FreezeClass LIST
 
-Defines methods to be used to freeze specific classes. These settings override
-Freeze.  If one argument is provided then it returns the method for that class.
-If two arguments are provided then it sets the dump method for the given class.
-If more than two arguments are provided then it is assumed it is a list of
-CLASS, METHOD pairs and sets the entire list, discarding any existing settings.
-Called with no arguments in void setting clears the overall set of CLASS/METHOD
-pairs. Called with no arguments in list context returns all CLASS/METHOD pairs.
-Called with no arguments in scalar content returns a reference to the hash.
-
-B<NOTE:>
-Must be set before C<Data()> is called.
 
 =item FreezeThaw CLASS, FREEZE_METHOD, THAW_METHOD
 
@@ -2470,6 +2617,9 @@ both options. This will probably come in a later release.
 
 B<NOTE:>
 Must be set before C<Data()> is called.
+
+=for UEDIT
+sub IgnoreClass {}
 
 =item IgnoreClass
 
@@ -2488,21 +2638,6 @@ B<NOTE:>
 Must be set before C<Data()> is called.
 
 =for UEDIT
-sub Declare     {}
-sub IndentCols  {}
-sub DumpGlob    {}
-sub Deparse     {}
-sub CodeStub    {}
-sub FormatStub  {}
-sub DeparseGlob {}
-sub Rle         {}
-sub Freeze      {}
-sub Thaw        {}
----
-sub FreezeClass {}
-sub ThawClass   {}
-sub IgnoreClass {}
----
 sub DeparseOpts {}
 
 =cut
@@ -2568,7 +2703,7 @@ sub HashKeys {
 my %scalar_meth=map{ $_ => lc($_)}
       qw(Declare Indent IndentCols SortKeys Sortkeys IndentKeys
         Verbose DumpGlob Deparse DeparseGlob DeparseFormat CodeStub
-        FormatStub Rle Freeze Thaw);
+        FormatStub Rle RLE Purity DualVars Dualvars Freeze Thaw);
 my %hash_meth=map {$_ => lc($_)} qw(FreezeClass ThawClass IgnoreClass);
 
 sub AUTOLOAD {
@@ -2673,16 +2808,15 @@ returned by the anonymous array constructer in the fourth element (C<< $ARRAY1->
 results in yet another different fix statement.  If Verbose() is off then only a 'R' 'A' or 'V'
 tag is emitted as a marker of some form is necessary.
 
+All of this specialized behaviour can be bypassed by setting Purity() to FALSE, in which case the
+output will look very similar to what Data::Dumper outputs in low Purity setting.
+
 In a later version I'll try to expand this section with more examples.
 
 =head2 A Note About Speed
 
-For smaller size data structures Data::Dumper is far faster than this module. For larger
-size ones however Data::Dumper may not even be able to complete where Data::Dump:Streamer
-will. Especially if writing to a filehandle. Tests on the author's machine indicate that
-a binary tree of 4096 nodes will cause Data::Dumper to exhaust all ram. Data::Dump::Streamer
-on the other hand scales much further. It worth remembering that what you lose in speed for
-smaller structures you gain in readability and in accuracy for all of them.
+Data::Dumper is much faster than this module for many things. However IMO it is
+less readable, and definately less accurate. YMMV.
 
 =head1 EXPORT
 
@@ -2713,6 +2847,11 @@ on request.
         lock_keys_plus        # like lock_keys, but adds keys to those present
         lock_ref_keys         # like lock_keys but operates on a hashref
         lock_ref_keys_plus    # like lock_keys_plus but operates on a hashref
+        dualvar               # make a variable with different string/numeric
+                              # representation
+        alias_to              # pretend to return an alias, used in low
+                              # purity mode to indicate a value is actually
+                              # an alias to something else.
 
   :alias           # all croak on failure
      alias_av(@Array,$index,$var);
@@ -2732,7 +2871,7 @@ on request.
                      # in scalar context returns the pattern in (?msix:) form.
                      # If not a regex returns false.
      readonly($var)  # returns whether the $var is readonly
-     make_ro($var)   # causes $var to become readonly
+     make_ro($var)   # causes $var to become readonly, returns the value of $var.
      reftype_or_glob # returns the reftype of a reference, or if its not
                      # a reference but a glob then the globs name
      refaddr_or_glob # similar to reftype_or_glob but returns an address

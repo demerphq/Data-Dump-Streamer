@@ -67,3 +67,9 @@ Doc fixes, and removed a relic of earlier development that polluted @INC.
 Changed the way DDS is implemented to something a little simpler. Also enhanced
 the Makefile.pl stuff, and added mention of it to D::D::S's pod.
 
+1.10
+
+Added dualvar support. Added support for a low purity mode and Purity() overall.
+Refactored some code. More tests.
+
+
