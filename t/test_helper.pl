@@ -382,6 +382,10 @@ sub _eq {
 
 # eventually id like to move everything over to this.
 
+#    test_dump( {name=>"merlyns test 2",
+#                verbose=>1}, $o, ( \\@a ),
+#               <<'EXPECT',  );
+
 sub test_dump {
     my ($test,$obj)=splice @_,0,2;
     my $exp=normalize(pop @_);

@@ -20,6 +20,9 @@ my $o = Data::Dump::Streamer->new();
 isa_ok( $o, 'Data::Dump::Streamer' );
 
 {
+    local *icky;
+    *icky=\ "icky";
+    our $icky;
     my $id = 0;
     my $btree;
     $btree = sub {
@@ -39,9 +42,13 @@ isa_ok( $o, 'Data::Dump::Streamer' );
     my $hash = bless {
         A      => \$array,
         'B-B'  => ['$array'],
-        'CCCD' => [ 'foo', 'bar' ]
+        'CCCD' => [ 'foo', 'bar' ],
+        'E'=>\\1,
+        'F'=>\\undef,
+        'Q'=>sub{\@_}->($icky),
       },
       'ThisIsATest';
+    $hash->{G}=\$hash;
     my $boo = 'boo';
     @$array = ( \$hash, \$hash, \$hash, \$qr, \$qr, \'foo', \$boo );
     my $cap = capture( $x, $y, $qr, $x, $y, $qr );
@@ -89,12 +96,18 @@ $ThisIsATest1 = bless( {
                   CCCD  => [
                              'foo',
                              'bar'
-                           ]
+                           ],
+                  E     => \\1,
+                  F     => \do { my $v = \do { my $v = undef } },
+                  G     => $ARRAY2->[0],
+                  Q     => [ 'icky' ]
                 }, 'ThisIsATest' );
+make_ro($ThisIsATest1->{Q}[0]);
 $foo_bar1 = bless( qr/this is a test/m, 'foo_bar' );
 alias_av(@$ARRAY1, 2, $foo_bar1);
 alias_av(@$ARRAY1, 5, $foo_bar1);
 EXPECT
+
 
 }
 {

@@ -1,4 +1,4 @@
-use Test::More tests => 31;
+use Test::More tests => 41;
 use lib './lib';
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump) ); }
 use strict;
@@ -90,27 +90,81 @@ $ARRAY2->[0]{c} = $ARRAY1->[0]{a};
 EXPECT
 }
 {
+    my $x=\"foo";
+    my $y=\$x;
+    same( "Many Refs ( \$x, \$y ) No declare 1", $o->Declare(0),
+         <<'EXPECT', ( $x, $y )  );
+$SCALAR1 = \'foo';
+$REF1 = \$SCALAR1;
+EXPECT
+    #same( "Many Refs ( \$x, \$y )", $o, <<'EXPECT', $x, $y  );
+    #same( $dump = $o->Data( $x,$y )->Declare(1)->Out, <<'EXPECT', "Many Refs Declare ( \$x, \$y )", $o );
+    same( "Many Refs Declare ( \$x, \$y ) 1", $o->Declare(1),
+         <<'EXPECT', ( $x, $y )  );
+my $SCALAR1 = \'foo';
+my $REF1 = \$SCALAR1;
+EXPECT
+    same( "Many Refs Declare ( \$y, \$x ) 1", $o->Declare(1),
+         <<'EXPECT', ( $y,$x ) );
+my $REF1 = 'R: $SCALAR1';
+my $SCALAR1 = \'foo';
+$REF1 = \$SCALAR1;
+EXPECT
+    same("Many Refs ( \$y, \$x ) No Declare 1", $o->Declare(0),
+        <<'EXPECT', ( $y,$x ) );
+$REF1 = \$SCALAR1;
+$SCALAR1 = \'foo';
+EXPECT
+}
+{
+    my $x=\\"foo";
+    my $y=\\$x;
+    same( "Many Refs ( \$x, \$y ) No declare 2", $o->Declare(0),
+         <<'EXPECT', ( $x, $y )  );
+$REF1 = \\'foo';
+$REF2 = \\$REF1;
+EXPECT
+    #same( "Many Refs ( \$x, \$y )", $o, <<'EXPECT', $x, $y  );
+    #same( $dump = $o->Data( $x,$y )->Declare(1)->Out, <<'EXPECT', "Many Refs Declare ( \$x, \$y )", $o );
+    same( "Many Refs Declare ( \$x, \$y ) 2", $o->Declare(1),
+         <<'EXPECT', ( $x, $y )  );
+my $REF1 = \\'foo';
+my $REF2 = \\$REF1;
+EXPECT
+    same( "Many Refs Declare ( \$y, \$x ) 2", $o->Declare(1),
+         <<'EXPECT', ( $y,$x ) );
+my $REF1 = \do{my $f='R: $REF2'};
+my $REF2 = \\'foo';
+$$REF1 = \$REF2;
+EXPECT
+    same("Many Refs ( \$y, \$x ) No Declare 2", $o->Declare(0),
+        <<'EXPECT', ( $y,$x ) );
+$REF1 = \\$REF2;
+$REF2 = \\'foo';
+EXPECT
+}
+{
     my $x=\\\"foo";
     my $y=\\\$x;
-    same( "Many Refs ( \$x, \$y )", $o->Declare(0),
+    same( "Many Refs ( \$x, \$y ) No declare 3", $o->Declare(0),
          <<'EXPECT', ( $x, $y )  );
 $REF1 = \\\'foo';
 $REF2 = \\\$REF1;
 EXPECT
     #same( "Many Refs ( \$x, \$y )", $o, <<'EXPECT', $x, $y  );
     #same( $dump = $o->Data( $x,$y )->Declare(1)->Out, <<'EXPECT', "Many Refs Declare ( \$x, \$y )", $o );
-    same( "Many Refs Declare ( \$x, \$y )", $o->Declare(1),
+    same( "Many Refs Declare ( \$x, \$y ) 3", $o->Declare(1),
          <<'EXPECT', ( $x, $y )  );
 my $REF1 = \\\'foo';
 my $REF2 = \\\$REF1;
 EXPECT
-    same( "Many Refs Declare ( \$y, \$x )", $o->Declare(1),
+    same( "Many Refs Declare ( \$y, \$x ) 3", $o->Declare(1),
          <<'EXPECT', ( $y,$x ) );
 my $REF1 = \\do{my $f='R: $REF2'};
 my $REF2 = \\\'foo';
 $$$REF1 = \$REF2;
 EXPECT
-    same("Many Refs ( \$y, \$x )", $o->Declare(0),
+    same("Many Refs ( \$y, \$x ) No Declare 3", $o->Declare(0),
         <<'EXPECT', ( $y,$x ) );
 $REF1 = \\\$REF2;
 $REF2 = \\\'foo';
@@ -368,10 +422,24 @@ EXPECT
     use warnings FATAL=>'all';
     my $r = "Günter";
     test_dump( {name=>"Non unicode, high char",
-                no_dumper=>1,verbose=>1}, $o, ( $r ),
+                verbose=>1}, $o, ( $r ),
                <<'EXPECT',  );
 $VAR1 = "G\374nter";
 EXPECT
+}
+{
+    my $dv=dualvar(unpack('N','JAPH'),'JAPH');
+    test_dump( {name=>"Dualvars(0) ",
+                verbose=>1}, $o->Dualvars(0), ( $dv ),
+               <<'EXPECT',  );
+$VAR1 = 'JAPH';
+EXPECT
+    test_dump( {name=>"Dualvars(1)",
+                verbose=>1}, $o->Dualvars(1), ( $dv ),
+               <<'EXPECT',  );
+$VAR1 = dualvar( 1245794376, 'JAPH' );
+EXPECT
+
 }
 __END__
 # with eval testing
