@@ -19,14 +19,14 @@ use vars qw(@ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $VERSION $XS_VERSION $DEBUG $AU
 $DEBUG=0;
 
 BEGIN {
-    $VERSION   ='1.0';
+    $VERSION   ='1.01';
     $XS_VERSION='1.0';
     @ISA       = qw(Exporter DynaLoader);
 
     @EXPORT=qw(Dump);
     @EXPORT_OK = qw(
         Dump
-        Precise::Dump
+        Stream
         alias_av
         alias_hv
         alias_ref
@@ -82,8 +82,7 @@ BEGIN {
 
 =head1 NAME
 
-Data::Dump::Streamer - Perl extension for breadth first accurate dumping of data structures
-in perl code form.
+Data::Dump::Streamer - Stream a highly accurate breadth first data dump in perl code form to a var or file.
 
 =head1 SYNOPSIS
 
@@ -92,21 +91,18 @@ in perl code form.
   Dump($x,$y);                       # Prints to STDOUT
   Dump($x,$y)->Out();                #   "          "
 
-  my $s=Dump($x,$y);                 # Returns a string
-  my $s=Dump($x,$y)->Out();          #    "         "
+  my $o=Data::Dump::Streamer->new(); # Returns a new ...
+  my $o=Dump();                      # ... uninitialized object.
 
-  my @l=Dump($x,$y);                 # List of code fragments
-  my @l=Dump($x,$y)->Out();          # List of code fragments
-
-  my $o=Data::Dump::Streamer->new();         # New Data::Dump::Streamer obj
-  my $o=Dump();                      # same;
-
-
+  my $o=Dump($x,$y);                 # Returns an initialized object
+  my $s=Dump($x,$y)->Out();          #  "  a string of the dumped obj
+  my @l=Dump($x,$y);                 #  "  a list of code fragments
+  my @l=Dump($x,$y)->Out();          #  "  a list of code fragments
 
   Dump($x,$y)->To(\*STDERR)->Out();  # Prints to STDERR
 
-  Dump($x,$y)->Names('foo','bar')
-             ->Out();                # Specify Names
+  Dump($x,$y)->Names('foo','bar')    # Specify Names
+             ->Out();
 
   Dump($x,$y)->Indent(0)->Out();     # No indent
 
@@ -115,7 +111,7 @@ in perl code form.
              ->Names('foo','bar')    # ... specify Names
              ->Out();                # Print...
 
-  $o->Data($x,$y);                   # Object form
+  $o->Data($x,$y);                   # OO form of what Dump($x,$y) does.
   $o->Names('Foo','Names');          #  ...
   $o->Out();                         #  ...
 
@@ -124,7 +120,7 @@ in perl code form.
 Converts a data structure into a sequence of perl statements sufficient for
 recreating the original via eval.  This module is very similar in concept to
 L<Data::Dumper|Data::Dumper> and L<Data::Dump|Data::Dump>, with the major differences being that this
-module is designed to output to a Precise::Dump instead of constructing its output
+module is designed to output to a stream instead of constructing its output
 in memory, and that the traversal over the data structure is effectively breadth
 first versus the depth first traversal done by the others.
 
@@ -196,13 +192,58 @@ The order in which the rules are applied is:
   3. Generic via SortKeys() settings
   4. Use perls internal hash ordering.
 
+=head3 Controlling Object Representation (Freeze/Thaw)
 
-=head3 Data::Dumper Compatibility
+This module provides hooks for specially handling objects. Freeze/Thaw for generic
+handling, and FreezeClass/ThawClass for class specific handling. These hooks work as
+follows (and it should be understood that Freeze() below refers to both it and FreezeClass
+as does Thaw() refer to ThawClass() as well.
+
+If a Freeze() hook is specified then it is called on the object during the
+Data() phase prior to traversing the object. The freeze hook may perform whatever
+duties it needs and change its internal structure, _or_ it may alter $_[0] providing
+a substitute reference to be dumped instead (note that this will not alter the data
+structure being dumped). This reference may even be a totally different type!
+
+If a Thaw() hook is specified then as part of the dump code will be included to
+rebless the reference and then call the hook on the newly created object. If the code
+was originally frozen (not replaced) the method will be called on the object to unfreeze
+it during the Out() phase of the dump, leaving the structure unmodified after the dump.
+If the object was replaced by the freeze hook this doesnt occur as it assumed the data
+structure has not changed.  A special rule applies to Thaw() hooks in that if they include
+the prefix "->" then they are not executed inline, and as such expected to return the object,
+but as an independent statement after the object hash been created created, and the return
+of the statement is ignored. Thus a method that simply changes the internal state of the object
+but doesn't return an object reference may be used as a Thaw() handler.
+
+For now these options are specified as string values representing the method names. Its
+possible a later version will extend this to also handle codrefs.
+
+B<Note> that the Freeze/Thaw methods will NOT be executed on objects that don't support those
+methods. The setting in this case will be silently ignored.
+
+=head2 Data::Dumper Compatibility
 
 For drop in compatibility with the Dumper() usage of Data::Dumper, you may request
 that the L<Dumper> method is exported. It will not be exported by default. In addition
 the standard Data::Dumper::Dumper() may be exported on request as 'DDumper'. If you
 provide the tag ':Dumper' then both will be exported.
+
+=over 4
+
+=item Dumper
+
+=item Dumper LIST
+
+A synonym for scalar Dump(LIST)->Out for usage compatibility with L<Data::Dumper|Data::Dumper>
+
+=item DDumper
+
+=item DDumper LIST
+
+A secondary export of the actual L<Data::Dumper::Dumper|Data::Dumper> subroutine.
+
+=back 4
 
 =head2 Constructors
 
@@ -350,7 +391,7 @@ sub _make_name {
 
 #=item diag
 #
-#Outputs to STDOUT a list of all values that Precise::Dump has identified of being
+#Outputs to STDOUT a list of all values that have been identified of being
 #worth of study. For development/debugging purposes only at this point.
 #
 #=cut
@@ -493,20 +534,32 @@ If called with no arguments it is exactly equivelent to calling
 
   Data::Dump::Streamer->new()
 
-If called with arguments and in non-void context it is equivelent to calling
+which means it returns an object reference.
+
+If called with arguments and in scalar context it is equivelent to calling
 
   Data::Dump::Streamer->new()->Data(@vals)
 
 except that the actual depth first traversal is I<delayed> until C<Out()> is called.
 This means that options that must be provided before the C<Data()> phase can be provided
-after the call to C<Dump()>.
+after the call to C<Dump()>.  Again, it returns a object reference.
 
-If called with arguments and in void context it is equivelent to calling
+If called with arguments and in void or list context it is equivelent to calling
 
   Data::Dump::Streamer->new()->Data(@vals)->Out()
 
-The combined behaviour of Dump() and method chaining means that the various
-calls can be combined in a very DWIM fashion.
+The reason this is true in list context is to make C<print Dump(...),"\n";> do the right
+thing. And also that combined with method chaining options can be added or removed as
+required quite easily and naturally.
+
+So to put it short:
+
+  my $obj=Dump($x,$y);         # Returns an object
+  my $str=Dump($x,$y)->Out();  # Returns a string of the dump.
+  my @code=Dump($x,$y);        # Returns a list of the dump.
+
+  Dump($x,$y);                 # prints the dump.
+  print Dump($x,$y);           # prints the dump.
 
 =cut
 
@@ -519,7 +572,7 @@ sub DESTROY {
 
 sub Dump {
     if (@_) {
-        if ( defined wantarray ) {
+        if ( defined wantarray and !wantarray ) {
             my $self = __PACKAGE__->new();
             $args_insideout{$self}= $self->_make_args(@_);
             $self;
@@ -610,7 +663,11 @@ sub _make_args {
             ];
 }
 
+=back 4
+
 =head2 Methods
+
+=over 4
 
 =item Data
 
@@ -718,12 +775,14 @@ sub Data {
                     print "Ignoring '$cname' as its class ($class) in our ignore list.\n";
                     next;
                 } elsif (my $meth=$self->{style}{freezeclass}{$class}||$self->{style}{freeze}){
-                    ${$ritem}->$meth() if ${$ritem}->can($meth);
-                    unless (refaddr($$ritem)==$raddr) {
-                        $self->{ref_fz}{$raddr}=$$ritem;
+                    if (${$ritem}->can($meth)) {
+                        ${$ritem}->$meth();
+                        unless (refaddr($$ritem)==$raddr) {
+                            $self->{ref_fz}{$raddr}=$$ritem;
+                        }
+                        $frozen=1;
+                        redo DEQUEUE;
                     }
-                    $frozen=1;
-                    redo DEQUEUE;
                 }
             }
         }
@@ -798,9 +857,7 @@ sub Data {
 
     }
     $self->{cataloged}=1;
-    if (defined wantarray) {
-        return $self;
-    }
+    return $self;
 }
 
 sub _add_fix {
@@ -967,7 +1024,7 @@ All should DWIM.
 # then _add_fix adds them to the list, and _apply_fix pulls them off.
 # note that _apply_fix can also call _dump_sv if needed (to handle globs),
 # and will also emit fix statements as early as possible. no require/use
-# logic is currently in place. its the evalers responsibility to use Precise::Dump
+# logic is currently in place. its the evalers responsibility to use the mod
 # w/the right tags for now...
 
 sub Out {
@@ -1580,7 +1637,9 @@ sub _dump_rv {
                 } else {
                     $self->_add_fix("thaw",$idx,$meth);
                 }
-                #$item->$meth();
+                $item->$meth()
+                    if ($self->{style}{freezeclass}{$class}||$self->{style}{freeze})
+                       and !$frozen; # $frozen is only true f a replacement was used
             }
         }
     }
@@ -1690,6 +1749,10 @@ Must be set before C<Data()> is called.
 
 =item SortKeys TYPE_OR_CODE
 
+=item Sortkeys
+
+=item Sortkeys TYPE_OR_CODE
+
 If False then hashes are iterated using each(), and are output in whatever
 order your particular instance of perl provides, which varies across OS,
 architecture and version. This requires considerably less memory, and time.
@@ -1713,9 +1776,19 @@ more keys or a different ordering probably wont be.
 
 See L<"Controlling Hash Traversal and Display Order"> for more details.
 
+B<Note> that C<Sortkeys()> is a synonym for C<SortKeys()> for compatibility with
+expectations formed by Data::Dumper. Data::Dumper provides the former, but the latter
+is consistant with the method naming scheme in this module. So in the spirit of TIMTOWTDI
+you can use either. :-)
+
+
 =item HashKeys
 
 =item HashKeys LIST
+
+=item Hashkeys
+
+=item Hashkeys LIST
 
 In addition to L<SortKeys> it is possible to further fine tune the traversal
 and ordering of hashes by using HashKeys().  Using this method you may specify
@@ -1733,6 +1806,10 @@ parameters in void context clears all HashKeys() settings.
 See L<"Controlling Hash Traversal and Display Order"> and L<"SortKeys"> for more
 details.
 
+B<Note> that C<Hashkeys()> is a synonym for C<HashKeys()> for compatibility with
+expectations formed by Data::Dumper with regard to the method Sortkeys(). See L<SortKeys>
+for details of this method and the reason behind the synonym.
+
 =item Verbose
 
 =item Verbose BOOL
@@ -1741,10 +1818,10 @@ If Verbose is True then when references that cannot be resolved in a single
 statement are encountered the reference is substituted for a descriptive tag
 saying what type of forward reference it is, and to what is being referenced.
 The type is provided through a prefix, "R:" for reference, and "A:" for alias,
-and then the name of the var in a string. Automatically generated var names
-are also reduced to the shortest possible unique abbreviation, with some tricks
-thrown in for Long::Class::Names::Like::This (which would abbreviate most likely
-to LCNLT1)
+"V:" for a value and then the name of the var in a string. Automatically
+generated var names are also reduced to the shortest possible unique abbreviation,
+with some tricks thrown in for Long::Class::Names::Like::This (which would
+abbreviate most likely to LCNLT1)
 
 If Verbose if False then a simple placeholder saying 'A' or 'R' is provided.
 (In most situations perl requires a placeholder, and as such one is always
@@ -2003,8 +2080,9 @@ sub HashKeys {
         delete $self->{style}{hashkeys};
     }
 }
+*Hashkeys=*HashKeys;
 
-my %scalar_meth=map{ $_ => lc($_)} qw(Declare Indent IndentCols SortKeys IndentKeys
+my %scalar_meth=map{ $_ => lc($_)} qw(Declare Indent IndentCols SortKeys Sortkeys IndentKeys
         Verbose DumpGlob Deparse DeparseGlob CodeStub Rle Freeze Thaw);
 my %hash_meth=map {$_ => lc($_)} qw(FreezeClass ThawClass IgnoreClass);
 
@@ -2073,7 +2151,47 @@ __END__
 
 =back
 
-=head1 A NOTE ABOUT SPEED
+=head2 Reading the Output
+
+As mentioned in L<Verbose> there is a notation used to make understanding the output easier.
+However at first glance it can probably be a bit confusing. Take the following example:
+
+    my $x=1;
+    my $y=[];
+    my $array=sub{\@_ }->( $x,$x,$y );
+    push @$array,$y,1;
+    unshift @$array,\$array->[-1];
+    Dump($array);
+
+Which prints (without the comments of course):
+
+    $ARRAY1 = [
+                'R: $ARRAY1->[5]',        # resolved by fix 1
+                1,
+                'A: $ARRAY1->[1]',        # resolved by fix 2
+                [],
+                'V: $ARRAY1->[3]',        # resolved by fix 3
+                1
+              ];
+    $ARRAY1->[0] = \$ARRAY1->[5];         # fix 1
+    alias_av(@$ARRAY1, 2, $ARRAY1->[1]);  # fix 2
+    $ARRAY1->[4] = $ARRAY1->[3];          # fix 3
+
+The first entry, C<< 'R: $ARRAY1->[5]' >> indicates that this slot in the array holds a reference
+to the currently undefined C<< $ARRAY1->[5] >>, and as such the value will have to be provided
+later in what the author calls 'fix' statements. The third entry C<< 'A: $ARRAY1->[1]' >> indicates
+that is element of the array is in fact the exact same scalar as exists in C<< $ARRAY1->[1] >>, or is
+in other words, an alias to that variable. Again, this cannot be expressed in a single statment
+and so generates another, different, fix statement. The fifth entry C<< 'V: $ARRAY1->[3]' >> indicates
+that this slots holds a value (actually a reference value) that is identical to one elsewhere,
+but is currently undefined.  In this case it is because the value it needs is the reference
+returned by the anonymous array constructer in the fourth element (C<< $ARRAY1->[3] >>). Again this
+results in yet another different fix statement.  If Verbose() is off then only a 'R' 'A' or 'V'
+tag is emitted as a marker of some form is necessary.
+
+In a later version I'll try to expand this section with more examples.
+
+=head2 A Note About Speed
 
 For smaller size data structures Data::Dumper is far faster than this module. For larger
 size ones however Data::Dumper may not even be able to complete where Data::Dump:Streamer
@@ -2085,7 +2203,7 @@ smaller structures you gain in readability and in accuracy for all of them.
 =head1 EXPORT
 
 By default exports the Dump() command. Or may export on request the same command
-as Precise::Dump(). A Data::Dumper::Dumper compatibility routine is provided via
+as Stream(). A Data::Dumper::Dumper compatibility routine is provided via
 requesting Dumper and access to the real Data::Dumper::Dumper routine is provided
 via DDumper. The later two are exported together with the :Dumper tag.
 
@@ -2133,7 +2251,7 @@ on request.
                      # in the case of a reference.
      globname        # returns an evalable string to represent a glob, or
                      # the empty string if not a glob.
-  :all               # (Dump() and Precise::Dump() and Dumper() and DDumper()
+  :all               # (Dump() and Stream() and Dumper() and DDumper()
                      #  and all of the XS)
   :bin               # (not Dump() but all of the rest of the XS)
 
