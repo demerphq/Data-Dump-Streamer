@@ -1,8 +1,4 @@
-/*
- * Streamer.xs
- *
- * $Id: Streamer.xs 39 2007-12-22 00:11:22Z demerphq $
- *
+/* Precise/Streamer.xs
  * Code from Array::RefElem
  * Copyright (c) 1997-2000 Graham Barr <gbarr@pobox.com>. All rights reserved.
  * This program is free software; you can redistribute it and/or
@@ -12,18 +8,14 @@
  * Copyright 2000 Gisle Aas.
  * This library is free software; you can redistribute it and/or
  * modify it under the same terms as Perl itself.
- * A good chunk of the XS is morphed or taken directly from this module.
- * Thanks Gisle.
  *
  * alias_ref is from Lexical::Alias by Jeff Pinyan which
  * was borrowed/modified from Devel::LexAlias by Richard Clamp
- *
  *
  * Additional Code and Modifications
  * Copyright 2003 Yves Orton.
  * This library is free software; you can redistribute it and/or
  * modify it under the same terms as Perl itself.
- *
  */
 
 #ifdef __cplusplus
@@ -48,61 +40,11 @@ extern "C" {
 #if PERL_VERSION < 8
 #   define PERL_MAGIC_qr		  'r' /* precompiled qr// regex */
 #   define BFD_Svs_SMG_OR_RMG SVs_RMG
-#elif ((PERL_VERSION==8) && (PERL_SUBVERSION >= 1) || (PERL_VERSION>8))
+#elif PERL_SUBVERSION>=1
 #   define BFD_Svs_SMG_OR_RMG SVs_SMG
-#   define MY_PLACEHOLDER PL_sv_placeholder
 #else
 #   define BFD_Svs_SMG_OR_RMG SVs_RMG
-#   define MY_PLACEHOLDER PL_sv_undef
 #endif
-#if (((PERL_VERSION == 9) && (PERL_SUBVERSION >= 4)) || (PERL_VERSION > 9))
-#   define NEW_REGEX_ENGINE 1
-#endif   
-#if (((PERL_VERSION == 8) && (PERL_SUBVERSION >= 1)) || (PERL_VERSION > 8))
-#define MY_CAN_FIND_PLACEHOLDERS
-#define HAS_SV2OBJ
-#endif
-
-#ifdef SvWEAKREF
-
-#   ifndef PERL_MAGIC_backref
-#       define PERL_MAGIC_backref	  '<'
-#   endif
-
-#define ADD_WEAK_REFCOUNT do {                          \
-        MAGIC *mg = NULL;                               \
-        if( SvMAGICAL(sv)                               \
-            && (mg = mg_find(sv, PERL_MAGIC_backref) )  \
-        ){                                              \
-            AV *av = (AV *)mg->mg_obj;                  \
-            RETVAL += av_len(av)+1;                     \
-        }                                               \
-    } while (0)
-#else
-#define ADD_WEAK_REFCOUNT
-#endif
-
-
-#if PERL_VERSION < 7
-/* Not in 5.6.1. */
-#  define SvUOK(sv)           SvIOK_UV(sv)
-#  ifdef cxinc
-#    undef cxinc
-#  endif
-#  define cxinc() my_cxinc(aTHX)
-static I32
-my_cxinc(pTHX)
-{
-    cxstack_max = cxstack_max * 3 / 2;
-    Renew(cxstack, cxstack_max + 1, struct context);      /* XXX should fix CXINC macro */
-    return cxstack_ix + 1;
-}
-#endif
-
-#if PERL_VERSION < 6
-#    define NV double
-#endif
-
 
 /*
    the following three subs are outright stolen from Data::Dumper ( Dumper.xs )
@@ -176,107 +118,7 @@ esc_q(register char *d, register char *s, register STRLEN slen)
     return ret;
 }
 
-
-XS(XS_Data__Dump__Streamer_SvREADONLY);
-XS(XS_Data__Dump__Streamer_SvREADONLY)	/* This is dangerous stuff. */
-{
-    dXSARGS;
-    SV *sv = SvRV(ST(0));
-    if (items == 1) {
-	 if (SvREADONLY(sv))
-	     XSRETURN_YES;
-	 else
-	     XSRETURN_NO;
-    }
-    else if (items == 2) {
-	if (SvTRUE(ST(1))) {
-	    SvREADONLY_on(sv);
-	    XSRETURN_YES;
-	}
-	else {
-	    /* I hope you really know what you are doing. */
-	    SvREADONLY_off(sv);
-	    XSRETURN_NO;
-	}
-    }
-    XSRETURN_UNDEF; /* Can't happen. */
-}
-
-XS(XS_Data__Dump__Streamer_SvREFCNT);
-XS(XS_Data__Dump__Streamer_SvREFCNT)	/* This is dangerous stuff. */
-{
-    dXSARGS;
-    SV *sv = SvRV(ST(0));
-    if (items == 1)
-	 XSRETURN_IV(SvREFCNT(sv) - 1); /* Minus the ref created for us. */
-    else if (items == 2) {
-         /* I hope you really know what you are doing. */
-	 SvREFCNT(sv) = SvIV(ST(1));
-	 XSRETURN_IV(SvREFCNT(sv));
-    }
-    XSRETURN_UNDEF; /* Can't happen. */
-}
-
-/* this is from B is perl 5.9.2 */
-typedef SV	*B__SV;
-
-MODULE = B	PACKAGE = B::SV
-
-#ifndef HAS_SV2OBJ
-
-#define object_2svref(sv)	sv
-#define SVREF SV *
-
-SVREF
-object_2svref(sv)
-	B::SV	sv
-
-#endif
-
 MODULE = Data::Dump::Streamer		PACKAGE = Data::Dump::Streamer
-
-void
-dualvar(num,str)
-    SV *	num
-    SV *	str
-PROTOTYPE: $$
-CODE:
-{
-    STRLEN len;
-    char *ptr = SvPV(str,len);
-    ST(0) = sv_newmortal();
-    (void)SvUPGRADE(ST(0),SVt_PVNV);
-    sv_setpvn(ST(0),ptr,len);
-    if(SvNOK(num) || SvPOK(num) || SvMAGICAL(num)) {
-	SvNVX(ST(0)) = SvNV(num);
-	SvNOK_on(ST(0));
-    }
-#ifdef SVf_IVisUV
-    else if (SvUOK(num)) {
-	SvUVX(ST(0)) = SvUV(num);
-	SvIOK_on(ST(0));
-	SvIsUV_on(ST(0));
-    }
-#endif
-    else {
-	SvIVX(ST(0)) = SvIV(num);
-	SvIOK_on(ST(0));
-    }
-    if(PL_tainting && (SvTAINTED(num) || SvTAINTED(str)))
-	SvTAINTED_on(ST(0));
-    XSRETURN(1);
-}
-
-bool
-_could_be_dualvar(sv)
-    SV * sv
-PROTOTYPE: $
-CODE:
-{
-    RETVAL = ((SvNIOK(sv)) && (SvPOK(sv))) ? 1 : 0;
-}
-OUTPUT:
-    RETVAL
 
 
 int
@@ -353,7 +195,7 @@ CODE:
     if(!sv_isobject(sv)) {
 	XSRETURN_UNDEF;
     }
-    RETVAL = (char *)sv_reftype(SvRV(sv),TRUE);
+    RETVAL = sv_reftype(SvRV(sv),TRUE);
 }
 OUTPUT:
     RETVAL
@@ -374,56 +216,6 @@ CODE:
 OUTPUT:
     RETVAL
 
-
-void
-weaken(sv)
-	SV *sv
-PROTOTYPE: $
-CODE:
-#ifdef SvWEAKREF
-        sv_rvweaken(sv);
-        XSRETURN_YES;
-#else
-	croak("weak references are not implemented in this release of perl");
-#endif
-
-void
-isweak(sv)
-	SV *sv
-PROTOTYPE: $
-CODE:
-#ifdef SvWEAKREF
-	ST(0) = boolSV(SvROK(sv) && SvWEAKREF(sv));
-	XSRETURN(1);
-#else
-	XSRETURN_NO;
-#endif
-
-
-IV
-weak_refcount(sv)
-    SV * sv
-PROTOTYPE: $
-CODE:
-{
-    RETVAL=0;
-    ADD_WEAK_REFCOUNT;
-}
-OUTPUT:
-    RETVAL
-
-IV
-sv_refcount(sv)
-    SV * sv
-PROTOTYPE: $
-CODE:
-{
-    RETVAL = SvREFCNT(sv);
-    ADD_WEAK_REFCOUNT;
-}
-OUTPUT:
-    RETVAL
-
 IV
 refcount(sv)
     SV * sv
@@ -435,8 +227,18 @@ CODE:
     } else {
         sv = (SV*)SvRV(sv);
         RETVAL = SvREFCNT(sv);
-        ADD_WEAK_REFCOUNT;
     }
+}
+OUTPUT:
+    RETVAL
+
+IV
+sv_refcount(sv)
+    SV * sv
+PROTOTYPE: $
+CODE:
+{
+    RETVAL = SvREFCNT(sv);
 }
 OUTPUT:
     RETVAL
@@ -455,27 +257,13 @@ OUTPUT:
 
 
 int
-_make_ro(sv)
+make_ro(sv)
 	SV *sv
 PROTOTYPE: $
 CODE:
   RETVAL = SvREADONLY_on(sv);
 OUTPUT:
   RETVAL
-
-
-SV *
-make_ro(sv)
-	SV *sv
-PROTOTYPE: $
-CODE:
-  SvREADONLY_on(sv);
-  SvREFCNT_inc(sv);
-  RETVAL=sv;
-OUTPUT:
-  RETVAL
-
-
 
 
 int
@@ -561,7 +349,7 @@ CODE:
     if(!SvROK(sv)) {
 	XSRETURN_NO;
     } else {
-        RETVAL = (char *)sv_reftype(SvRV(sv),FALSE);
+        RETVAL = sv_reftype(SvRV(sv),FALSE);
     }
 }
 OUTPUT:
@@ -626,7 +414,6 @@ CODE:
                 sv_grow(RETVAL, 6+2*i);
                 r = SvPVX(RETVAL);
                 r[0] = '*'; r[1] = '{'; r[2] = '\'';
-                /* i have a feeling this will cause problems with utf8 glob names */
                 i += esc_q(r+3, c, i);
                 i += 3;
                 r[i++] = '\''; r[i++] = '}';
@@ -765,9 +552,9 @@ OUTPUT:
     RETVAL
 
 
-#ifndef NEW_REGEX_ENGINE
 
-void
+
+SV *
 regex(sv)
     SV * sv
 PROTOTYPE: $
@@ -808,7 +595,6 @@ PPCODE:
                      && (mg = mg_find(sv, PERL_MAGIC_qr)))
                 {
                     /* Housten, we have a regex! */
-                    SV *pattern;
                     regexp *re = (regexp *)mg->mg_obj;
                     I32 gimme = GIMME_V;
 
@@ -831,12 +617,8 @@ PPCODE:
                             }
                             reganch >>= 1;
                         }
-
-                        pattern = sv_2mortal(newSVpvn(re->precomp,re->prelen));
-                        if (re->reganch & ROPT_UTF8) SvUTF8_on(pattern);
-
                         /* return the pattern and the modifiers */
-                        XPUSHs(pattern);
+                        XPUSHs(sv_2mortal(newSVpvn(re->precomp,re->prelen)));
                         XPUSHs(sv_2mortal(newSVpvn(reflags,left)));
                         XSRETURN(2);
                     } else {
@@ -915,9 +697,7 @@ PPCODE:
 
                             }
                             /* return the pattern in (?msix:..) format */
-                            pattern = sv_2mortal(newSVpvn(mg->mg_ptr,mg->mg_len));
-                            if (re->reganch & ROPT_UTF8) SvUTF8_on(pattern);
-                            XPUSHs(pattern);
+                            XPUSHs(sv_2mortal(newSVpvn(mg->mg_ptr, mg->mg_len)));
                             XSRETURN(1);
                     }
                 }
@@ -927,96 +707,3 @@ PPCODE:
     /* 'twould appear it aint a regex, so return undef/empty list */
     XSRETURN_UNDEF;
 }
-
-#endif
-
-#ifdef MY_CAN_FIND_PLACEHOLDERS
-
-void
-all_keys(hash,keys,placeholder)
-	SV* hash
-	SV* keys
-	SV* placeholder
-    PROTOTYPE: \%\@\@
-    PREINIT:
-	AV* av_k;
-        AV* av_p;
-        HV* hv;
-        SV *key;
-        HE *he;
-    CODE:
-	if (!SvROK(hash) || SvTYPE(SvRV(hash)) != SVt_PVHV)
-	   croak("First argument to all_keys() must be an HASH reference");
-	if (!SvROK(keys) || SvTYPE(SvRV(keys)) != SVt_PVAV)
-	   croak("Second argument to all_keys() must be an ARRAY reference");
-        if (!SvROK(placeholder) || SvTYPE(SvRV(placeholder)) != SVt_PVAV)
-	   croak("Third argument to all_keys() must be an ARRAY reference");
-
-	hv = (HV*)SvRV(hash);
-	av_k = (AV*)SvRV(keys);
-	av_p = (AV*)SvRV(placeholder);
-
-        av_clear(av_k);
-        av_clear(av_p);
-
-        (void)hv_iterinit(hv);
-	while((he = hv_iternext_flags(hv, HV_ITERNEXT_WANTPLACEHOLDERS))!= NULL) {
-	    key=hv_iterkeysv(he);
-            if (HeVAL(he) == &MY_PLACEHOLDER) {
-                SvREFCNT_inc(key);
-	        av_push(av_p, key);
-            } else {
-                SvREFCNT_inc(key);
-	        av_push(av_k, key);
-            }
-        }
-
-
-
-void
-hidden_keys(hash)
-	SV* hash
-    PROTOTYPE: \%
-    PREINIT:
-        HV* hv;
-        SV *key;
-        HE *he;
-    PPCODE:
-	if (!SvROK(hash) || SvTYPE(SvRV(hash)) != SVt_PVHV)
-	   croak("First argument to hidden_keys() must be an HASH reference");
-
-	hv = (HV*)SvRV(hash);
-        (void)hv_iterinit(hv);
-	while((he = hv_iternext_flags(hv, HV_ITERNEXT_WANTPLACEHOLDERS))!= NULL) {
-	    key=hv_iterkeysv(he);
-            if (HeVAL(he) == &MY_PLACEHOLDER) {
-                XPUSHs( key );
-            }
-        }
-
-void
-legal_keys(hash)
-	SV* hash
-    PROTOTYPE: \%
-    PREINIT:
-        HV* hv;
-        SV *key;
-        HE *he;
-    PPCODE:
-	if (!SvROK(hash) || SvTYPE(SvRV(hash)) != SVt_PVHV)
-	   croak("First argument to legal_keys() must be an HASH reference");
-
-	hv = (HV*)SvRV(hash);
-
-        (void)hv_iterinit(hv);
-	while((he = hv_iternext_flags(hv, HV_ITERNEXT_WANTPLACEHOLDERS))!= NULL) {
-	    key=hv_iterkeysv(he);
-            XPUSHs( key );
-        }
-
-
-#endif
-
-BOOT:
-newXSproto("Data::Dump::Streamer::SvREADONLY_ref", XS_Data__Dump__Streamer_SvREADONLY, file,"$;$");
-newXSproto("Data::Dump::Streamer::SvREFCNT_ref", XS_Data__Dump__Streamer_SvREFCNT, file,"$;$");

@@ -1,7 +1,5 @@
-use Test::More tests=>19;
-
-#$Id: globtest.t 26 2006-04-16 15:18:52Z demerphq $#
-
+use Test::More tests=>11;
+use lib './lib';
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(regex Dump alias_av alias_hv) ); }
 use strict;
 use warnings;
@@ -56,17 +54,7 @@ EXPECT
 		$g = 'a string';
 		@g = qw/a list/;
 		%g = qw/a hash/;
-		our ($off,$width,$bits,$val,$res);
-		($off,$width,$bits,$val,$res)=($off,$width,$bits,$val,$res);
-		eval'
-		format g =
-vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-$off, $width, $bits, $val, $res
-vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-$off, $width, $bits, $val, $res
-.
-';
-		same( scalar $o->Data(*g)->Out, <<'EXPECT', "data slots (glob/FORMAT)", $o );
+		same( scalar $o->Data(*g)->Out, <<'EXPECT', "data slots", $o );
 $VAR1 = *::g;
 *::g = \do { my $v = 'a string' };
 *::g = { a => 'hash' };
@@ -74,52 +62,8 @@ $VAR1 = *::g;
          'a',
          'list'
        ];
-format g =
-vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-$off, $width, $bits, $val, $res
-vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-$off, $width, $bits, $val, $res
-.
-EXPECT
-                SKIP: {
-                    skip "no FORMAT refs before ".vstr(5,7)." and this is ".vstr(),
-                         my $NUM=3
-                       unless  5.008 <= $];
 
-		same( scalar $o->Data(*g{FORMAT})->Out, <<'EXPECT', "data slots (ref/FORMAT)", $o );
-$FORMAT1 = do{ local *F; my $F=<<'_EOF_FORMAT_'; $F=~s/^\s+# //mg; eval $F; die $F.$@ if $@; *F{FORMAT};
-           # format F =
-           # vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-           # $off, $width, $bits, $val, $res
-           # vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-           # $off, $width, $bits, $val, $res
-           # .
-_EOF_FORMAT_
-           };
 EXPECT
-                my $y=bless *g{FORMAT},"Thank::YSTH";
-                #same ( scalar $o->Data(*g{FORMAT})->Out, <<'EXPECT', "data slots (blessed FORMAT)", $o );
-		test_dump( {name=>"data slots (blessed FORMAT)",
-		            verbose=>1,
-		            pre_eval=>'our ($off,$width,$bits,$val,$res);',
-		            no_dumper=>1
-		            },
-		             $o, *g{FORMAT}, <<'EXPECT'  );
-$Thank_YSTH1 = bless( do{ local *F; my $F=<<'_EOF_FORMAT_'; $F=~s/^\s+# //mg; eval $F; die $F.$@ if $@; *F{FORMAT};
-               # format F =
-               # vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-               # $off, $width, $bits, $val, $res
-               # vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-               # $off, $width, $bits, $val, $res
-               # .
-_EOF_FORMAT_
-               }, 'Thank::YSTH' );
-EXPECT
-    our $gg=1; #silence a warning;
-		same( scalar $o->Data(*gg{FORMAT})->Out, <<'EXPECT', "data slots (empty FORMAT)", $o );
-$VAR1 = undef;
-EXPECT
-                };
 	}
 
 	# no. 6 - self glob
@@ -230,57 +174,12 @@ ${$bar}->[2] = $$baz;
 ${$baz}->{d} = $$baz;
 EXPECT
 }
-# with eval testing
-{
 
-    use Symbol;
-    my $x=gensym;
-    my $names=$o->Names(); # scalar context
-    same( scalar $o->Data($x)->Out(),<<'EXPECT', "Symbol 1", $o );
-my $foo = do{ require Symbol; Symbol::gensym };
-EXPECT
-    my @names=$o->Names(); # scalar context
-    same( scalar $o->Data($x)->Out(),<<'EXPECT', "Symbol 2", $o );
-my $foo = do{ require Symbol; Symbol::gensym };
-EXPECT
-    $o->Names();
-    same( scalar $o->Data($x)->Out(),<<'EXPECT', "Symbol 3", $o );
-my $GLOB1 = do{ require Symbol; Symbol::gensym };
-EXPECT
-
-    #local $Data::Dump::Streamer::DEBUG=1;
-
-    $x=\gensym; #
-    *$$x = $x;
-    *$$x = $names;
-    *$$x = { Thank => '[ysth]', Grr => bless \gensym,'Foo' };
-    #Devel::Peek::Dump $x
-
-    same( scalar $o->Data( $x )->Out(),<<'EXPECT', "Symbol 4", $o );
-my $REF1 = \do{ require Symbol; Symbol::gensym };
-*$$REF1 = {
-            Grr   => bless( \Symbol::gensym, 'Foo' ),
-            Thank => '[ysth]'
-          };
-*$$REF1 = [
-            'foo',
-            'bar',
-            'baz'
-          ];
-*$$REF1 = $REF1;
-EXPECT
-
-}
-{
-    same( my $dump=$o->Data(*{gensym()})->Out, <<'EXPECT', "Symbol 5", $o );
-my $VAR1 = *{ do{ require Symbol; Symbol::gensym } };
-EXPECT
-}
 __END__
 # with eval testing
 {
     same( "", $o, <<'EXPECT', (  ) );
-EXPECT
+
 }
 # without eval testing
 {
