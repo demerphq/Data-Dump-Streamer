@@ -1,4 +1,4 @@
-use Test::More tests=>11;
+use Test::More tests=>19;
 use lib './lib';
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(regex Dump alias_av alias_hv) ); }
 use strict;
@@ -60,9 +60,11 @@ EXPECT
 		format g =
 vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 $off, $width, $bits, $val, $res
+vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+$off, $width, $bits, $val, $res
 .
 ';
-		same( scalar $o->Data(*g)->Out, <<'EXPECT', "data slots (FORMAT)", $o );
+		same( scalar $o->Data(*g)->Out, <<'EXPECT', "data slots (glob/FORMAT)", $o );
 $VAR1 = *::g;
 *::g = \do { my $v = 'a string' };
 *::g = { a => 'hash' };
@@ -70,10 +72,49 @@ $VAR1 = *::g;
          'a',
          'list'
        ];
-format g = vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+format g =
+vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+$off, $width, $bits, $val, $res
+vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 $off, $width, $bits, $val, $res
 .
 EXPECT
+                SKIP: {
+                    skip "FORMAT's not supported before 5.8.0, (5.008) and this is $]" ,
+                         2
+                       unless  5.008 <= $];
+
+		same( scalar $o->Data(*g{FORMAT})->Out, <<'EXPECT', "data slots (ref/FORMAT)", $o );
+$FORMAT1 = do{ local *F;
+           eval <<'_EOF_FORMAT_'
+format F =
+vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+$off, $width, $bits, $val, $res
+vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+$off, $width, $bits, $val, $res
+.
+_EOF_FORMAT_
+           *F{FORMAT} };
+EXPECT
+                my $y=bless *g{FORMAT},"Thank::YSTH";
+		same( scalar $o->Data(*g{FORMAT})->Out, <<'EXPECT', "data slots (blessed FORMAT)", $o );
+$Thank_YSTH1 = bless( do{ local *F;
+               eval <<'_EOF_FORMAT_'
+format F =
+vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+$off, $width, $bits, $val, $res
+vec($_,@#,@#) = @<< == @######### @>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+$off, $width, $bits, $val, $res
+.
+_EOF_FORMAT_
+               *F{FORMAT} }, 'Thank::YSTH' );
+EXPECT
+    our $gg=1; #silence a warning;
+		same( scalar $o->Data(*gg{FORMAT})->Out, <<'EXPECT', "data slots (empty FORMAT)", $o );
+$VAR1 = undef;
+EXPECT
+
+                };
 	}
 
 	# no. 6 - self glob
@@ -184,12 +225,57 @@ ${$bar}->[2] = $$baz;
 ${$baz}->{d} = $$baz;
 EXPECT
 }
+# with eval testing
+{
 
+    use Symbol;
+    my $x=gensym;
+    my $names=$o->Names(); # scalar context
+    same( scalar $o->Data($x)->Out(),<<'EXPECT', "Symbol 1", $o );
+my $foo = do{ require Symbol; Symbol::gensym };
+EXPECT
+    my @names=$o->Names(); # scalar context
+    same( scalar $o->Data($x)->Out(),<<'EXPECT', "Symbol 2", $o );
+my $foo = do{ require Symbol; Symbol::gensym };
+EXPECT
+    $o->Names();
+    same( scalar $o->Data($x)->Out(),<<'EXPECT', "Symbol 3", $o );
+my $GLOB1 = do{ require Symbol; Symbol::gensym };
+EXPECT
+
+    #local $Data::Dump::Streamer::DEBUG=1;
+
+    $x=\gensym; #
+    *$$x = $x;
+    *$$x = $names;
+    *$$x = { Thank => '[ysth]', Grr => bless \gensym,'Foo' };
+    #Devel::Peek::Dump $x
+
+    same( scalar $o->Data( $x )->Out(),<<'EXPECT', "Symbol 4", $o );
+my $REF1 = \do{ require Symbol; Symbol::gensym };
+*$$REF1 = {
+            Grr   => bless( \Symbol::gensym, 'Foo' ),
+            Thank => '[ysth]'
+          };
+*$$REF1 = [
+            'foo',
+            'bar',
+            'baz'
+          ];
+*$$REF1 = $REF1;
+EXPECT
+
+}
+{
+    same( my $dump=$o->Data(*{gensym()})->Out, <<'EXPECT', "Symbol 5", $o );
+my $VAR1 = *{ do{ require Symbol; Symbol::gensym } };
+EXPECT
+}
 __END__
 # with eval testing
 {
     same( "", $o, <<'EXPECT', (  ) );
-
+EXPECT
 }
 # without eval testing
 {

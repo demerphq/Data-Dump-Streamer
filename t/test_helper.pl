@@ -181,7 +181,7 @@ sub same {
 
     my ($dumper,$error) = _dumper(\@_);
     if ($error) {
-        diag( "$name\n$error" );
+        diag( "$name\n$error" ) if $ENV{USERNAME} eq 'demerphq' and $ENV{FULLTEST};
     }
     if ($dumper) {
 
@@ -195,7 +195,8 @@ sub same {
             $dd_result_eval = "my(" . join ( ",", @declare ) . ");\n" . $dd_result_eval;
             $result2_eval   = "my(" . join ( ",", @declare ) . ");\n" . $result2_eval;
         }
-        foreach my $test ( [ "Dumper", $dd_result_eval, $dumper ], [ "Streamer", $result2_eval, $result ] ) {
+        foreach my $test ( [ "Data::Dumper", $dd_result_eval, $dumper ],
+                           [ "Data::Dump::Streamer", $result2_eval, $result ] ) {
             my ( $test_name, $eval, $orig ) = @$test;
 
             my ($warned,$res);
