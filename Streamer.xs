@@ -455,6 +455,7 @@ CODE:
                 sv_grow(RETVAL, 6+2*i);
                 r = SvPVX(RETVAL);
                 r[0] = '*'; r[1] = '{'; r[2] = '\'';
+                /* i have a feeling this will cause problems with utf8 glob names */
                 i += esc_q(r+3, c, i);
                 i += 3;
                 r[i++] = '\''; r[i++] = '}';
@@ -636,6 +637,7 @@ PPCODE:
                      && (mg = mg_find(sv, PERL_MAGIC_qr)))
                 {
                     /* Housten, we have a regex! */
+                    SV *pattern;
                     regexp *re = (regexp *)mg->mg_obj;
                     I32 gimme = GIMME_V;
 
@@ -658,8 +660,12 @@ PPCODE:
                             }
                             reganch >>= 1;
                         }
+
+                        pattern = sv_2mortal(newSVpvn(re->precomp,re->prelen));
+                        if (re->reganch & ROPT_UTF8) SvUTF8_on(pattern);
+
                         /* return the pattern and the modifiers */
-                        XPUSHs(sv_2mortal(newSVpvn(re->precomp,re->prelen)));
+                        XPUSHs(pattern);
                         XPUSHs(sv_2mortal(newSVpvn(reflags,left)));
                         XSRETURN(2);
                     } else {
@@ -738,7 +744,9 @@ PPCODE:
 
                             }
                             /* return the pattern in (?msix:..) format */
-                            XPUSHs(sv_2mortal(newSVpvn(mg->mg_ptr, mg->mg_len)));
+                            pattern = sv_2mortal(newSVpvn(mg->mg_ptr,mg->mg_len));
+                            if (re->reganch & ROPT_UTF8) SvUTF8_on(pattern);      
+                            XPUSHs(pattern);
                             XSRETURN(1);
                     }
                 }

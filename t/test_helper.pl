@@ -374,7 +374,7 @@ sub _eq {
     # finally both $exp and $res should hold results
     my $diff=_my_diff($exp,$res);
     if ($diff && $test->{verbose}) {
-        diag "Error:\n$test->{name}($name) failed to return the expected result:\n",
+        diag "Error:\n$test->{name} subtest $name failed to return the expected result:\n",
              $diff
     }
     return !$diff;
