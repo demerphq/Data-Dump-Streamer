@@ -1,8 +1,22 @@
+#!./perl
+
+BEGIN {
+    unless (-d 'blib') {
+	chdir 't' if -d 't';
+	@INC = '../lib';
+	require Config; import Config;
+	keys %Config; # Silence warning
+	if ($Config{extensions} !~ /\bList\/Util\b/) {
+	    print "1..0 # Skip: List::Util was not built\n";
+	    exit 0;
+	}
+    }
+}
+
+
 use Data::Dump::Streamer qw(refaddr);
 use vars qw($t $y $x *F $v $r);
 use Symbol qw(gensym);
-
-#$Id: refaddr.t 26 2006-04-16 15:18:52Z demerphq $#
 
 # Ensure we do not trigger and tied methods
 tie *F, 'MyTie';

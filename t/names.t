@@ -1,10 +1,9 @@
 use Test::More tests => 50;
+use lib './lib';
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump) ); }
 use strict;
 use warnings;
 use Data::Dumper;
-
-#$Id: names.t 26 2006-04-16 15:18:52Z demerphq $#
 
 # imports same()
 (my $helper=$0)=~s/\w+\.\w+$/test_helper.pl/;

@@ -1,28 +1,19 @@
-.patch
-Changes
-INSTALL.SKIP
-MANIFEST			This list of files
-MANIFEST.SKIP
-META.yml
-Makefile.PL
-README
 Streamer.xs
+Changes
 lib/Data/Dump/Streamer.pm
 lib/Data/Dump/Streamer/_/Printers.pm
-t/as.t
+Makefile.PL
+MANIFEST			This list of files
+META.yml
+README
 t/blessed.t
 t/dogpound.t
 t/dump.t
 t/filter.t
 t/globtest.t
 t/hardrefs.t
-t/impure_madness.t
-t/lexicals.t
-t/locked.t
 t/madness.t
-t/madness_w.t
 t/names.t
-t/overload.t
 t/readonly.t
 t/refaddr.t
 t/refcount.t
@@ -31,6 +22,3 @@ t/reftype.t
 t/sortkeys.t
 t/test_helper.pl
 t/tree.t
-t/usage.t
-t/xs_subs.t
-typemap

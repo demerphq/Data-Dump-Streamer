@@ -1,7 +1,5 @@
 #!./perl
 
-#$Id: readonly.t 26 2006-04-16 15:18:52Z demerphq $#
-
 BEGIN {
     unless (-d 'blib') {
 	chdir 't' if -d 't';
