@@ -28,6 +28,13 @@ Once im happy with it I intend to convert all my old tests to use it
 and do away with the really quite horrible same() and _same() in
 test_helper.pl.
 
+1.05
 
+Added support for locked hashes. Probably there are still bugs in here,
+but for now it looks good. Thanks to Yitzchak for pointing out this wasn't
+implemented.
+
+Also started adding support for a "smart indent mode". Try using Indent(1)
+instead of Indent(2).
 
 

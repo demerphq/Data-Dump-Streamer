@@ -134,9 +134,9 @@ $ARRAY1 = [
 EXPECT
 
     same( "Rle(1) Tight", $o->Verbose(0)->Indent(0)->Rle(1), <<'EXPECT', ( $x ) );
-$A1 = [ ( 1 ) x 4,0,( 1 ) x 4 ];
+$A1 = [ ( 1 ) x 4, 0, ( 1 ) x 4 ];
 EXPECT
-    same( "Rle(1)", $o->Verbose(1)->Indent(1)->Rle(1), <<'EXPECT', ( $x ) );
+    same( "Rle(1)", $o->Verbose(1)->Indent(2)->Rle(1), <<'EXPECT', ( $x ) );
 $ARRAY1 = [
             ( 1 ) x 4,
             0,
@@ -170,7 +170,7 @@ EXPECT
             regex => qr/(?:baz)/,
           };
 
-    same( "Indent", $o->Indent(1), <<'EXPECT', ( $x ) );
+    same( "Indent", $o->Indent(2), <<'EXPECT', ( $x ) );
 $HASH1 = {
            array  => [
                        0,
@@ -190,9 +190,9 @@ $HASH1 = {
          };
 EXPECT
     same( "Indent(0)", $o->Indent(0), <<'EXPECT', ( $x ) );
-$HASH1 = { array => [ 0,1,2,3,4,5 ],hash => { 0 => 1,2 => 3,4 => 5 },object => bless( \do { my $v = 'Foo!' }, 'Bar' ),regex => qr/(?:baz)/ };
+$HASH1 = { array => [ 0, 1, 2, 3, 4, 5 ], hash => { 0 => 1, 2 => 3, 4 => 5 }, object => bless( \do { my $v = 'Foo!' }, 'Bar' ), regex => qr/(?:baz)/ };
 EXPECT
-    same( "IndentCols(0)", $o->Indent(1)->IndentCols(0), <<'EXPECT', ( $x ) );
+    same( "IndentCols(0)", $o->Indent(2)->IndentCols(0), <<'EXPECT', ( $x ) );
 $HASH1 = {
          array  => [
                    0,
@@ -211,7 +211,7 @@ $HASH1 = {
          regex  => qr/(?:baz)/
          };
 EXPECT
-    same( "IndentCols(4)", $o->Indent(1)->IndentCols(4), <<'EXPECT', ( $x ) );
+    same( "IndentCols(4)", $o->Indent(2)->IndentCols(4), <<'EXPECT', ( $x ) );
 $HASH1 = {
              array  => [
                            0,
@@ -230,7 +230,7 @@ $HASH1 = {
              regex  => qr/(?:baz)/
          };
 EXPECT
-    same( "IndentCols(2)", $o->Indent(1)->IndentCols(2), <<'EXPECT', ( $x ) );
+    same( "IndentCols(2)", $o->Indent(2)->IndentCols(2), <<'EXPECT', ( $x ) );
 $HASH1 = {
            array  => [
                        0,
