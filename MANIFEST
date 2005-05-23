@@ -1,4 +1,5 @@
 Streamer.xs
+typemap
 Changes
 lib/Data/Dump/Streamer.pm
 lib/Data/Dump/Streamer.pm
@@ -14,6 +15,10 @@ t/filter.t
 t/globtest.t
 t/hardrefs.t
 t/madness.t
+t/madness_w.t
+t/overload.t
+t/usage.t
+t/lexicals.t
 t/impure_madness.t
 t/names.t
 t/xs_subs.t

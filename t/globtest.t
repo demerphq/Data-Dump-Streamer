@@ -1,5 +1,5 @@
 use Test::More tests=>19;
-use lib './lib';
+
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(regex Dump alias_av alias_hv) ); }
 use strict;
 use warnings;

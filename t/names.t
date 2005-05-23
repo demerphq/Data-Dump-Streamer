@@ -1,5 +1,4 @@
 use Test::More tests => 50;
-use lib './lib';
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump) ); }
 use strict;
 use warnings;

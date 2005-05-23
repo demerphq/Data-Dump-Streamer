@@ -38,6 +38,12 @@ SKIP:{
     delete $hash{c};
     lock_keys(%hash);
     ok(Internals::SvREADONLY(%hash),'lock_keys');
+    
+    # we do this skip here just to make sure lock_keys is correctly setup.
+    skip "Cant tell if a key is locked in 5.8.0",
+        $XTRA - 1
+        if $]==5.008;        
+    
     delete @hash{qw(b e)};
     my @hidden=sort(hidden_keys(%hash));
     my @legal=sort(legal_keys(%hash));
