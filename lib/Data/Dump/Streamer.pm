@@ -5,6 +5,8 @@ use Exporter;
 use DynaLoader;
 use Text::Balanced qw(extract_bracketed);
 use B::Deparse;
+use B qw(svref_2object);
+use B::Utils qw(walkoptree_filtered opgrep);
 use IO::File;
 use Data::Dumper ();
 use Data::Dump::Streamer::_::Printers;
@@ -25,8 +27,8 @@ use vars qw(
 $DEBUG=0;
 
 BEGIN {
-    $VERSION   ='1.10';
-    $XS_VERSION='1.10';
+    $VERSION   ='1.11';
+    $XS_VERSION='1.11';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
 
@@ -66,6 +68,9 @@ BEGIN {
         lock_keys_plus
         SvREADONLY_ref
         SvREFCNT_ref
+        isweak
+        weaken
+        weak_refcount
 
         readonly_set
 
@@ -83,6 +88,7 @@ BEGIN {
                         lock_keys_plus
                         alias_to
                         dualvar
+                        weaken
                       )
                   ],
         special=> [ qw( readonly_set ) ],
@@ -96,6 +102,7 @@ BEGIN {
                         readonly looks_like_number regex is_numeric
                         make_ro readonly_set reftype_or_glob
                         refaddr_or_glob globname
+                        weak_refcount isweak weaken
                       )
                   ],
 
@@ -106,23 +113,25 @@ BEGIN {
 
     #warn $VERSION;
     Data::Dump::Streamer->bootstrap($XS_VERSION);
-    if ($]<5.008) {
+    if ($]<=5.008) {
         *hidden_keys=sub(\%)  { return () };
         *legal_keys=sub(\%)   { return keys %{$_[0]} };
         *all_keys=sub(\%\@\@) { @{$_[1]}=keys %{$_[0]}; @$_[2]=(); };
-        no strict 'refs';
-        foreach my $sub (qw(lock_keys lock_keys_plus )) {
-            *$sub=sub(\%;@) {
-                warnings::warn "$sub doesn't do anything before Perl 5.8.0\n";
-                return $_[0];
+    }        
+    if ( $]<5.008 ) {
+            no strict 'refs';
+            foreach my $sub (qw(lock_keys lock_keys_plus )) {
+                *$sub=sub(\%;@) {
+                    warnings::warn "$sub doesn't do anything before Perl 5.8.0\n";
+                    return $_[0];
+                }
             }
-        }
-        foreach my $sub (qw(lock_ref_keys lock_ref_keys_plus )) {
-            *$sub=sub($;@) {
-                warnings::warn "$sub doesn't do anything before Perl 5.8.0\n";
-                return $_[0];
+            foreach my $sub (qw(lock_ref_keys lock_ref_keys_plus )) {
+                *$sub=sub($;@) {
+                    warnings::warn "$sub doesn't do anything before Perl 5.8.0\n";
+                    return $_[0];
+                }
             }
-        }
     } else {
         eval <<'EO_HU'
         use Hash::Util qw(lock_keys);
@@ -776,6 +785,22 @@ but it will not affect the behaviour of
 
   print scalar Dump($x,$y);
 
+B<Note> As of 1.11 Dump also works as a method, with identical properties as when called
+as a subroutine, with the exception that when called with no arguments it is a synonym for
+C<Out()>. Thus
+
+  $obj->Dump($foo)->Names('foo')->Out();
+  
+will work fine, as will the odd looking:
+
+  $obj->Dump($foo)->Names('foo')->Dump();
+
+which are both the same as
+
+  $obj->Names('foo')->Data($foo)->Out();
+  
+Hopefully this should make method use more or less DWIM.  
+
 =cut
 
 my %args_insideout;
@@ -786,16 +811,25 @@ sub DESTROY {
 }
 
 sub Dump {
+    my $obj;
+    if ( blessed($_[0]) and blessed($_[0]) eq __PACKAGE__ ) {
+        $obj=shift;
+    }
     if (@_) {
         if ( defined wantarray and !wantarray ) {
-            my $self = __PACKAGE__->new();
-            $args_insideout{$self}= $self->_make_args(@_);
-            $self;
+            $obj ||= __PACKAGE__->new();
+            $args_insideout{$obj}= $obj->_make_args(@_);
+            return $obj;
         } else {
-            __PACKAGE__->Data(@_)->Out();
+            $obj||=__PACKAGE__;
+            return $obj->Data(@_)->Out();
         }
     } else {
-        __PACKAGE__->new();
+        if ($obj) {
+            return $obj->Out();
+        } else {
+            return __PACKAGE__->new();
+        }
     }
 }
 
@@ -833,6 +867,8 @@ sub _reg_scalar {
         $self->{sva}[$idx]=$addr;
         $self->{svro}[$idx]=$ro;
         $self->{svc}[$idx]=$cnt;
+        $self->{svw}{$addr}=!0 
+            if isweak($_[1]);
         ($self->{svn}[$idx]=$name)=~s/^[\@\%\&]/\$/;
         if ($self->{svn}[$idx] ne $name) {
             $self->{svn}[$idx].="_"; #XXX
@@ -862,24 +898,10 @@ sub _make_args {
     my $self=shift;
             [
                 map {
-#                        my $rc=sv_refcount($_[$_]);
-#                        warn $rc;
-#                        my $ret=[
-#                          \$_[$_],
-#                          1,
-#                          sv_refcount($_[$_]),
-#                          readonly($_[$_]),
-#                          $self->_make_name($_[$_],$_)
-#                        ];
-#                        #weaken($ret->[0]) if ref($_[$_]);
-#                        $ret;
-#
-                        my $refcnt =sv_refcount($_[$_]);
-                        my $ro =readonly($_[$_]);
                         {
                                 item   => \$_[$_],
-                                ro     => $ro,
-                                refcnt => $refcnt
+                                ro     => readonly($_[$_]),
+                                refcnt => sv_refcount($_[$_]),
                         }
                     } 0..$#_
             ];
@@ -942,142 +964,251 @@ sub Data {
         $self->_reset;
     }
     $args=$args_insideout{$self} || Carp::confess "No arguments!";
-
-    my @queue;
-    my $idx=0;
-    foreach my $arg (@$args) {
-        #($self,$item,$depth,$cnt,$ro,$name)
-        my $make_name=$self->_make_name(${ $arg->{item} },$idx++);
-        my $name=$self->_reg_scalar(
-            ${ $arg->{item} },
-            1,
-            $arg->{refcnt},
-            $arg->{ro},
-            $make_name,
-            $arg
-        );
-        $arg->{name}=$name;
-        if (my $type=reftype_or_glob ${ $arg->{item} }) {
-            $self->_add_queue(\@queue, $type, ${ $arg->{item} }, 2, $name, refcount ${ $arg->{item} },$arg)
-        }
-    }
-
-    while (@queue) {
-        # If the scalar (container) is of any interest it is
-        # already registered by the time we see it here.
-        # at this point we only care about the contents, not the
-        # container.
-        print Data::Dumper->new([\@queue],['*queue'])->Maxdepth(3)->Dump
-            if $DEBUG>=10;
-
-        my ($ritem,
-            $cdepth,
-            $cname,
-            $rcnt,
-            $arg)=@{shift @queue};
-
-        my ($frozen,$item,$raddr,$class);
-        DEQUEUE:{
-            $item=$$ritem;
-            $raddr=refaddr($item);
-            $class=blessed($item);
-
-            $DEBUG and
-            print "Q-> $item $cdepth $cname $rcnt ($raddr)\n";
-
-            unless ($raddr) {
-                $DEBUG and
-                print "  Skipping '$cname' as it isn't a reference.\n";
-                next;
+    my $pass=1;
+PASS:{    
+        my @queue;
+        my $idx=0;
+        foreach my $arg (@$args) {
+            #($self,$item,$depth,$cnt,$ro,$name)
+            my $make_name=$self->_make_name(${ $arg->{item} },$idx++);
+            my $name=$self->_reg_scalar(
+                ${ $arg->{item} },
+                1,
+                $arg->{refcnt},
+                $arg->{ro},
+                $make_name,
+                $arg
+            );
+            $arg->{name}=$name;
+            if (my $type=reftype_or_glob ${ $arg->{item} }) {
+                $self->_add_queue(\@queue, $type, ${ $arg->{item} }, 2, $name, refcount ${ $arg->{item} },$arg)
             }
-
-            if ($class and !$frozen) {
-                if ($self->{style}{ignoreclass}{$class}) {
+        }
+        
+        my %lex_addr;
+        my %lex_addr2name;
+        my %lex_name;
+        my %lex_special;
+        
+        while (@queue) {
+            # If the scalar (container) is of any interest it is
+            # already registered by the time we see it here.
+            # at this point we only care about the contents, not the
+            # container.
+            print Data::Dumper->new([\@queue],['*queue'])->Maxdepth(3)->Dump
+                if $DEBUG>=10;
+    
+            my ($ritem,
+                $cdepth,
+                $cname,
+                $rcnt,
+                $arg)=@{shift @queue};
+                
+            
+    
+            my ($frozen,$item,$raddr,$class);
+            DEQUEUE:{
+                $item=$$ritem;
+                $raddr=refaddr($item);
+                $class=blessed($item);
+    
+                $DEBUG and
+                print "Q-> $item $cdepth $cname $rcnt ($raddr)\n";
+    
+                unless ($raddr) {
                     $DEBUG and
-                    print "Ignoring '$cname' as its class ($class) in our ignore list.\n";
+                    print "  Skipping '$cname' as it isn't a reference.\n";
                     next;
-                } elsif (my $meth=$self->{style}{freezeclass}{$class}||$self->{style}{freeze}){
-                    if (${$ritem}->can($meth)) {
-                        ${$ritem}->$meth();
-                        unless (refaddr($$ritem)==$raddr) {
-                            $self->{ref_fz}{$raddr}=$$ritem;
+                }
+    
+                if ($class and !$frozen) {
+                    if ($self->{style}{ignoreclass}{$class}) {
+                        $DEBUG and
+                        print "Ignoring '$cname' as its class ($class) in our ignore list.\n";
+                        next;
+                    } elsif (my $meth=$self->{style}{freezeclass}{$class}||$self->{style}{freeze}){
+                        if (${$ritem}->can($meth)) {
+                            ${$ritem}->$meth();
+                            unless (refaddr($$ritem)==$raddr) {
+                                $self->{ref_fz}{$raddr}=$$ritem;
+                            }
+                            $frozen=1;
+                            redo DEQUEUE;
                         }
-                        $frozen=1;
-                        redo DEQUEUE;
                     }
                 }
             }
-        }
-
-        my ($idx,$dupe)=$self->_reg_ref($item,$cdepth,$cname,$rcnt,$arg);
-        $DEBUG and print "  Skipping '$cname' as it is a dupe of ".
-                         "$self->{refn}[$idx]\n"
-            if $dupe;
-        $DEBUG>9 and $self->diag;
-        next if $dupe;
-
-
-        my $reftype=reftype $item;
-        my $cnt=refcount($item);
-
-        if ($reftype eq 'SCALAR' or $reftype eq 'REF' or $reftype eq 'GLOB') {
-            my $name=$self->_build_name($cname,'$');
-            my $cnt=sv_refcount($$item);
-            if ($cnt>1) {
-                $self->_reg_scalar($$item,$cdepth+1,$cnt,readonly($$item),$name);
+    
+            my ($idx,$dupe)=$self->_reg_ref($item,$cdepth,$cname,$rcnt,$arg);
+            $DEBUG and print "  Skipping '$cname' as it is a dupe of ".
+                             "$self->{refn}[$idx]\n"
+                if $dupe;
+            $DEBUG>9 and $self->diag;
+            next if $dupe;
+    
+    
+            my $reftype=reftype $item;
+            my $cnt=refcount($item);
+            my $overloaded=undef;
+            if (defined $class and overload::Overloaded($item)) {
+                bless $item, 'Does::Not::Exist';
+                $overloaded=$class;
             }
-            if (my $type=reftype_or_glob $$item) {
-                $self->_add_queue(\@queue,$type,$$item,$cdepth+2,$name,$cnt)
-            }
-
-        } elsif ($reftype eq 'ARRAY') {
-            foreach my $idx (0..$#$item) {
-                my $name=$self->_build_name($cname,'[',$idx);
-                my $cnt=sv_refcount($item->[$idx]);
+            
+    
+            if ($reftype eq 'SCALAR' or $reftype eq 'REF' or $reftype eq 'GLOB') {
+                my $name=$self->_build_name($cname,'$');
+                my $cnt=sv_refcount($$item);
                 if ($cnt>1) {
-                    print "refcount($name)==$cnt\n"
-                        if $DEBUG>9;
-                    $self->_reg_scalar($item->[$idx],$cdepth+1,$cnt,readonly($item->[$idx]),$name);
+                    $self->_reg_scalar($$item,$cdepth+1,$cnt,readonly($$item),$name);
                 }
-                if (my $type=reftype_or_glob $item->[$idx]) {
-                    $self->_add_queue(\@queue,$type,$item->[$idx],$cdepth+2,$name,$cnt)
+                if (my $type=reftype_or_glob $$item) {
+                    $self->_add_queue(\@queue,$type,$$item,$cdepth+2,$name,$cnt)
                 }
+    
+            } elsif ($reftype eq 'ARRAY') {
+                foreach my $idx (0..$#$item) {
+                    my $name=$self->_build_name($cname,'[',$idx);
+                    my $cnt=sv_refcount($item->[$idx]);
+                    if ($cnt>1) {
+                        print "refcount($name)==$cnt\n"
+                            if $DEBUG>9;
+                        $self->_reg_scalar($item->[$idx],$cdepth+1,$cnt,readonly($item->[$idx]),$name);
+                    }
+                    if (my $type=reftype_or_glob $item->[$idx]) {
+                        $self->_add_queue(\@queue,$type,$item->[$idx],$cdepth+2,$name,$cnt)
+                    }
+                }
+            } elsif ($reftype eq 'HASH') {
+                my $ik=$self->{style}{indentkeys};
+                my $keys=$self->_get_keys($item,$raddr,$class,0);
+                my $key_len=0;
+                my $key_sum=0;
+                my $key_count=0;
+                while (defined(my $key=defined $keys ? $keys->[$key_count] : each %$item)) {
+                    if ($ik) {
+                        my $qk=_quotekey($key);
+                        $key_sum+=length($qk);
+                        $key_len=length($qk) if $key_len<length($qk);
+                    }
+                    $key_count++;
+                    my $name=$self->_build_name($cname,'{',$key);
+                    my $cnt=sv_refcount($item->{$key});
+                    if ($cnt>1) {
+                        $self->_reg_scalar($item->{$key},$cdepth+1,$cnt,readonly($item->{$key}),$name);
+                    }
+                    if (my $type=reftype_or_glob $item->{$key}) {
+                        $self->_add_queue(\@queue,$type,$item->{$key},$cdepth+2,$name,$cnt);
+                    }
+                }
+                my $avg=$key_count>0 ? $key_sum/$key_count : 0;
+                $self->{ref_hklen}{$raddr}=($key_len>8 and (2/3*$key_len)>$avg) ? int(0.5+$avg) : $key_len;
+                $self->{ref_hkcnt}{$raddr}=$key_count;
+                #warn "$raddr => $key_count";
+    
+            } elsif ($reftype eq 'CODE') {
+                if ($pass == 1) {
+                    my $used=get_lexicals($item);
+                    foreach my $name (keys %$used) {
+                        next unless $name=~/\D/;
+                        my $addr=refaddr($used->{$name});
+                        if ( !$lex_addr{$addr} ) {
+                            $lex_addr{$addr}=$used->{$name};
+                            if ( $lex_name{$name} ) {
+                                my $tmpname=sprintf "%s_eclipse_%d",
+                                                $name,++$lex_special{$name};
+                                $lex_name{$tmpname}=$addr;
+                                $lex_addr2name{$addr}=$tmpname;
+                            } else {
+                                $lex_name{$name}=$addr;
+                                $lex_addr2name{$addr}=$name;
+                            }
+                        }
+                    }
+                }
+            } elsif ($reftype eq 'FORMAT') {
+                # nothing
+            } else {
+                # IO?
+                Carp::confess "Data() can't handle '$reftype' objects yet\n :-(\n";
             }
-        } elsif ($reftype eq 'HASH') {
-            my $ik=$self->{style}{indentkeys};
-            my $keys=$self->_get_keys($item,$raddr,$class,0);
-            my $key_len=0;
-            my $key_sum=0;
-            my $key_count=0;
-            while (defined(my $key=defined $keys ? $keys->[$key_count] : each %$item)) {
-                if ($ik) {
-                    my $qk=_quotekey($key);
-                    $key_sum+=length($qk);
-                    $key_len=length($qk) if $key_len<length($qk);
-                }
-                $key_count++;
-                my $name=$self->_build_name($cname,'{',$key);
-                my $cnt=sv_refcount($item->{$key});
-                if ($cnt>1) {
-                    $self->_reg_scalar($item->{$key},$cdepth+1,$cnt,readonly($item->{$key}),$name);
-                }
-                if (my $type=reftype_or_glob $item->{$key}) {
-                    $self->_add_queue(\@queue,$type,$item->{$key},$cdepth+2,$name,$cnt);
-                }
-            }
-            my $avg=$key_count>0 ? $key_sum/$key_count : 0;
-            $self->{ref_hklen}{$raddr}=($key_len>8 and (2/3*$key_len)>$avg) ? int(0.5+$avg) : $key_len;
-            $self->{ref_hkcnt}{$raddr}=$key_count;
-            #warn "$raddr => $key_count";
-
-        } elsif ($reftype eq 'CODE' or $reftype eq 'FORMAT') {
-            next;
-        } else {
-            # CODE? IO?
-            Carp::confess "Data() can't handle '$reftype' objects yet\n :-(\n";
+            bless $item,$overloaded if defined $overloaded;
+    
         }
+        if ( $pass++ == 1 ) {
+            
+            my %items;
+            for my $idx ( 0..$#{$args_insideout{$self}} ) {
+                my $item=$args_insideout{$self}[$idx];
+                $items{ refaddr $item->{item} } = $idx;
+            }
+            
+            my @add;
+            my $added=0;
+            if (0) {
+                @add=keys %lex_addr;
+            } else {
+                for my $addr (keys %lex_addr) {
+                    if ( exists $items{$addr} ) {
+                        #warn sprintf "Gotcha: %0x | %s | %s",$addr,$self->{unames}[$idx]||'',$lex_addr2name{$addr};
+                        my $idx = $items{$addr};
+                        if ( !$self->{unames}[$idx] ){
+                            for ($self->{unames}[$idx] = $lex_addr2name{$addr}) {
+                                s/^[^\$]/*/; s/^\$//;
+                            }
+                            $added++;
+                        } else {
+                            my $new=$self->{unames}[$idx];
+                            my $old=$lex_addr2name{$addr};
+                            $new=~s/^(\*)?/substr($old,0,1)/e;
+                            delete $lex_name{$lex_addr2name{$addr}};
+                            $lex_addr2name{$addr}=$new;
+                            $lex_name{$self->{unames}[$idx]} = $addr;  # xxx 
+                        }
+                    } else {
+                        push @add,$addr;
+                    }
+                }
+            }
+            @add=sort {$lex_addr2name{$a} cmp $lex_addr2name{$b}} @add;
 
-    }
+            $self->{lexicals}={
+                               a2n => \%lex_addr2name,
+                               name => \%lex_name
+                              };
+            
+            if (@add) {
+                unshift @{$args_insideout{$self}},
+                        map {
+                            my $rt=reftype($lex_addr{$_});
+                            my $item;
+                            if ($rt ne 'SCALAR' and $rt ne 'GLOB' and $rt ne 'REF') {
+                                $item=\$lex_addr{$_};
+                            } else {
+                                $item=$lex_addr{$_};
+                            }
+                            {
+                                    item   => $item,
+                                    usemy  => 1,
+                                    ro     => 0,
+                                    refcnt => refcount($lex_addr{$_}),
+                            }
+                        } @add;
+                $self->{lexicals}{added}={ map { $lex_addr2name{$_} => 1 } @add };
+                unshift @{$self->{unames}},
+                    map { 
+                            (my $n=$lex_addr2name{$_})=~s/^[^\$]/*/; 
+                            $n=~s/^\$//; 
+                            $n 
+                        } @add;
+                $self->_reset;
+                redo PASS;
+            } elsif ($added) {
+                $self->_reset;
+                redo PASS;
+            }
+        }
+    }    
     $self->{cataloged}=1;
     return $self;
 }
@@ -1088,7 +1219,7 @@ sub _add_fix {
     # TODO
     # add a fix statement to the list of fixes.
     my $fix=@args==1 ? shift @args : [@args];
-    unless ($fix->[0]=~/^(var|glob|method call|ref|sv|#|sub call|lock)$/) {
+    unless ($fix->[0]=~/^(var|glob|method call|ref|sv|#|sub call|lock|bless)$/) {
         Carp::confess "Unknown variant:".Dumper($fix);
     }
 
@@ -1112,7 +1243,7 @@ sub _glob_slots {
 }
 
 sub _dump_apply_fix { #handle fix statements and GLOB's here.
-    my ($self,@args)=@_;
+    my ($self,$isfinal)=@_;
     # go through the fix statements and out any that are
     # now fully dumped.
     # curently the following types are grokked:
@@ -1130,6 +1261,15 @@ sub _dump_apply_fix { #handle fix statements and GLOB's here.
                 if ($type eq '#') {
                     $self->{fh}->print(map "# $_\n",@$fix[0..$#$fix]);
                     $keep=0;
+                } elsif ($type eq 'bless') {
+                    if ($isfinal) { # $self->{"refdu"}[$lhs]
+                        $lhs=$self->{"refn"}[$lhs];
+                        $self->{fh}->print(
+                            substr($self->{style}{bless},0,-1)," ",$lhs,", ",
+                           _quote($rhs)," ",substr($self->{style}{bless},-1),
+                           ";\n");
+                        $keep=0;
+                    }
                 } elsif ($type eq 'sv') {
 
                     my $dref=$_->[-1];
@@ -1153,7 +1293,7 @@ sub _dump_apply_fix { #handle fix statements and GLOB's here.
                         if ($rhs=~/^[\@\%\&]/) {
                             $rhs="\\".$rhs;
                             $rhs="bless( $rhs, "._quote($class).' )'
-                                if $class;
+                                if $class;                            
                         } # Warn if
                         $self->{fh}->print("$lhs = $rhs;\n");
                         $keep=0
@@ -1202,11 +1342,23 @@ sub _dump_apply_fix { #handle fix statements and GLOB's here.
             print "Symbol: $name\n" if $DEBUG and $name;
             local @_;
             $name=$name ? '*'.$name : $rhs;
+            my $overloaded=undef;
+            if (defined( blessed $lhs ) and
+                overload::Overloaded( $lhs ) ) 
+            {
+                $overloaded=blessed $lhs;
+                bless $lhs,"Does::Not::Exist";
+            }
             foreach my $t ($self->_glob_slots(''))
             {
                 my $v=*$lhs{$t};
-                next unless defined $v;
-                next if $t eq 'SCALAR' and !defined($$v);
+                
+                if ( not(defined $v) or
+                    ($t eq 'SCALAR' and !defined($$v))) 
+                {
+                    next;
+                }
+                            
 
                 my $dumped=0;
 
@@ -1227,6 +1379,7 @@ sub _dump_apply_fix { #handle fix statements and GLOB's here.
                 $self->{fh}->print(";\n");
                 $dumped=1;
             }
+            
             if ($self->{style}{deparse} && $self->{style}{deparseglob}
                 #and defined *$lhs{FORMAT}
             ) {
@@ -1240,13 +1393,16 @@ sub _dump_apply_fix { #handle fix statements and GLOB's here.
                 if (ref $Bobj eq 'B::FM') {
                     (my $cleaned=$name)=~s/^\*(::)?//;
                     $self->{fh}->print("format $cleaned =\n");
-                    my $deparser = B::Deparse::->new();
+                    my $deparser = Data::Dump::Streamer::Deparser->new();
                     $self->{fh}->print(
                         $deparser->indent($deparser->deparse_format($Bobj))
                     );
                     $self->{fh}->print("\n");
                 }
             }
+            bless $lhs,$overloaded 
+                    if defined $overloaded;
+            
         }
         redo GLOB if @globs;
     }
@@ -1369,7 +1525,9 @@ sub Out {
         warn DDumper(\@items) if $DEBUG;
     }
 
-
+    $self->{fh}->print("my (",join(",",sort keys %{$self->{lexicals}{added}}),");\n")
+        if $self->{lexicals}{added};
+        
     foreach my $item (@items) {
         my $dumped=0;
         my $ret=$self->_dump_sv(${$item->{item}},1,\$dumped,$item->{name});
@@ -1379,6 +1537,7 @@ sub Out {
         $dumped=1;
         $self->_dump_apply_fix();
     }
+    $self->_dump_apply_fix('final');
     $self->{fh}->print($namestr) if $namestr;
 
     $self->diag if $DEBUG;
@@ -1524,8 +1683,11 @@ sub _dump_sv {
         }
         #push @{$self->{out_names}},$name; #must
         #push @{$self->{declare}},$name;
-        unless ($name=~/^\&/) {
-            my $str=($self->{style}{declare} && $name!~/^\*/ ? "my " : "")."$name = ";
+        unless ($name=~/^\&/) { # XXX 
+            my $str=(($self->{style}{declare} && $name!~/^\*/ 
+                     && !$self->{lexicals}{added}{$name}
+                     ) ? "my " : ""
+                     )."$name = ";
             $self->{fh}->print($str);
             $indent=length($str);
             $self->{buf}=0;
@@ -1604,7 +1766,8 @@ sub _dump_sv {
     }
     $self->{fh}->print(' }')
             if $add_do;
-
+    $self->_add_fix('sub call','weaken',$name)
+            if $self->{svw}{$addr};
     return
 }
 
@@ -1931,7 +2094,28 @@ sub _dump_code {
     unless ($self->{style}{deparse}) {
         $self->{fh}->print($self->{style}{codestub});
     } else { #deparseopts
-        my $deparser=B::Deparse->new(@{$self->{style}{deparseopts}});
+        my $cv=svref_2object($item);
+        
+        if (ref($cv->ROOT)=~/NULL/) {
+            my $gv=$cv->GV;
+            $self->{fh}->print("\\&",$gv->STASH->NAME,"::",$gv->SAFENAME);
+            return;
+        }  
+            
+        my $deparser=Data::Dump::Streamer::Deparser->new(@{$self->{style}{deparseopts}});
+        
+        my $used=get_lexicals($item);
+        my %targ;
+        foreach my $targ (keys %$used) {
+            next if $targ=~/\D/;
+            my $addr=refaddr($used->{$targ});
+            $targ{$targ}=$self->{lexicals}{a2n}{$addr}
+                if $self->{lexicals}{a2n}{$addr};
+        }
+        
+        # we added this method, its not a normal method. see bottom of file.
+        $deparser->dds_usenames(\%targ); 
+        
         my $bless=undef;
         my $code;
         DEPARSE:{
@@ -1944,11 +2128,16 @@ sub _dump_code {
                 $bless='CODE';
                 redo DEPARSE;
             } elsif ($@) {
-                warnings::warnif "Using CODE stub for $name as B::Deparse->coderef2text (v$B::Deparse::VERSION on v@{[__vstr]}) failed. Message was:\n $@";
+                warnings::warnif "Using CODE stub for $name as ".
+                 "B::Deparse->coderef2text (v$B::Deparse::VERSION".
+                 " on v@{[__vstr]}) failed. Message was:\n $@";
                 $self->{fh}->print($self->{style}{codestub});
                 return;
             }
         }
+        
+        #$self->{fh}->print("\n#",join " ",keys %$used,"\n");
+        
         #$code=~s/^\s*(\([^)]+\)|)\s*/sub$1\n/;
         $code="sub".($code=~/^\s*\(/ ? "" : " ").$code;
         if ($self->{style}{indent}) {
@@ -1976,7 +2165,7 @@ sub _dump_format {
         if (ref $Bobj eq 'B::FM') {
             my $format;
             eval {
-              my $deparser = B::Deparse::->new();
+              my $deparser = Data::Dump::Streamer::Deparser->new();
               $format=$deparser->indent($deparser->deparse_format($Bobj));
             };
             if ($@) {
@@ -2018,7 +2207,7 @@ sub _dump_symbol {
 sub _dump_rv {
     my ($self,$item,$depth,$dumped,$name,$indent,$add_do)=@_;
 
-    my ($addr,$idx,$type,$class,$frozen);
+    my ($addr,$idx,$type,$class,$frozen,$overloaded);
     GETITEM: {
         $addr=refaddr($item) or Carp::confess "$name : $item";
         $idx=$self->{ref}{$addr};
@@ -2101,6 +2290,10 @@ sub _dump_rv {
     } else {
         Carp::confess "Unhandled object '$item'\n";
     }
+    if (defined $class and overload::Overloaded($item)) {
+        bless $item, 'Does::Not::Exist';
+        $overloaded=$class;
+    }
     $self->{do_nl}=1;
     my $add_lock=($type eq 'HASH') && SvREADONLY_ref($item);
     my $fix_lock=0;
@@ -2120,7 +2313,7 @@ sub _dump_rv {
 
 
     my $add_bless=defined($class) && ($name!~/^[\@\%\&]/);
-    if ($add_bless) {
+    if ($add_bless && !$overloaded) {
         $self->{fh}->print(substr($self->{style}{bless},0,-1)," ");
     }
 
@@ -2153,11 +2346,19 @@ sub _dump_rv {
          Carp::confess "_dump_rv() can't handle '$type' objects yet\n :-(\n";
     }
     if ($add_bless) {
-        $self->{fh}->print(", ",_quote($class)," ",substr($self->{style}{bless},-1));
+        unless ( defined $overloaded ) {
+            $self->{fh}->print(", ",_quote($class)," ",substr($self->{style}{bless},-1))
+        } else {
+            $self->_add_fix('bless',$idx,$overloaded);
+        }
+        bless $item, $overloaded
+            if defined $overloaded;
         if (my $meth=$self->{style}{thawclass}{$class}||$self->{style}{thaw}){
             my $now=$meth=~s/^->//;
             if ($item->can($meth)) {
-                if ($now) {
+                if ($now and !$overloaded) {
+                    # XXX what should happen here when its overloaded?
+                    # is this right???? Somehow i doubt it. 
                     $self->{fh}->print("->$meth()");
                 } else {
                     $self->_add_fix('method call',$idx,$meth); #thaw
@@ -2177,6 +2378,9 @@ sub _dump_rv {
         $self->{fh}->print(" )");
     }
     $self->{do_nl}=1;
+   
+    
+    
     return
 }
 
@@ -2754,17 +2958,84 @@ sub AUTOLOAD {
     }
 }
 
-unless (caller) {
-    #$DEBUG=2;
-    {
-        my ($a,$b);
-        $a = [{ a => \$b }, { b => undef }];
-        $b = [{ c => \$b }, { d => \$a }];
-        Dump->Names('*prime','*ref')->Data($a,$b)->Declare(0)->Out();
-        exit(0);
+sub get_lexicals {
+    my $cv=shift;
+    
+    my $svo=svref_2object($cv);
+    my @pl_array = $svo->PADLIST->ARRAY;
+    
+    my @name_obj = $pl_array[0]->ARRAY;
+    
+    my %named;
+    for my $i ( 0..$#name_obj ) {
+        if ( ref($name_obj[$i])!~/SPECIAL/) {
+            $named{$i} = "${ $name_obj[$i]->object_2svref }";
+        }
     }
+    
+    my %inited;
+    my %used;
+    walkoptree_filtered( 
+            $svo->ROOT,
+            sub { opgrep { name => [ qw[ padsv padav padhv ] ] }, @_ }, 
+            sub { 
+                my ( $op, @items )=@_;
+                my $targ = $op->targ;
+                my $name = $named{$targ} 
+                    or return;
+                
+                $inited{$name}++
+                    if $op->private & 128;
 
+                if ( !$inited{$name} ) {
+                    $used{$name} = $pl_array[1]->ARRAYelt($targ)->object_2svref;
+                    $used{$targ} = $used{$name};
+                    $inited{$name}++;
+                }
+            }
+    );
+    return \%used;
+}    
+
+
+
+
+
+package Data::Dump::Streamer::Deparser;
+use B::Deparse;
+our @ISA=qw(B::Deparse);
+my %cache;
+
+sub dds_usenames {
+    my $self=shift;
+    my $names=shift;
+    $cache{$self}=$names;
 }
+
+sub padname {
+    my $self = shift;
+    my $targ = shift;
+    if ( $cache{$self} and $cache{$self}{$targ} ) {
+        return $cache{$self}{$targ}
+    } 
+    return $self->padname_sv($targ)->PVX;
+}
+
+sub DESTROY {
+    my $self=shift;
+    delete $cache{$self};
+}
+
+unless (B::AV->can('ARRAYelt')) {
+    eval <<'    EOF_EVAL';
+        sub B::AV::ARRAYelt {
+            my ($obj,$idx)=@_;
+            my @array=$obj->ARRAY;
+            return $array[$idx];
+        }
+    EOF_EVAL
+}
+
 1;
 __END__
 
@@ -2861,16 +3132,21 @@ on request.
 
   :util
      blessed($var)           #undef or a class name.
+     isweak($var)            #returns true if $var contains a weakref
      reftype($var)           #the underlying type or false but defined.
      refaddr($var)           #a references address
      refcount($var)          #the number of times a reference is referenced
      sv_refcount($var)       #the number of times a scalar is referenced.
+     weak_refcount($var)     #the number of weakrefs to an object. 
+                             #sv_refcount($var)-weak_refcount($var) is the true
+                             #SvREFCOUNT() of the var.
      looks_like_number($var) #if perl will think this is a number.
 
      regex($var)     # In list context returns the pattern and the modifiers,
                      # in scalar context returns the pattern in (?msix:) form.
                      # If not a regex returns false.
      readonly($var)  # returns whether the $var is readonly
+     weaken($var)    # cause the reference contained in var to become weak.
      make_ro($var)   # causes $var to become readonly, returns the value of $var.
      reftype_or_glob # returns the reftype of a reference, or if its not
                      # a reference but a glob then the globs name

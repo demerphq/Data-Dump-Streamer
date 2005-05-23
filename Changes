@@ -72,4 +72,23 @@ the Makefile.pl stuff, and added mention of it to D::D::S's pod.
 Added dualvar support. Added support for a low purity mode and Purity() overall.
 Refactored some code. More tests.
 
+1.11
 
+Reworked how objects blessed into classes with overloads are handled to prevent
+any overloaded methods from firing during the eval of their dump. There may be
+problems with this and the Freeze/Thaw processing so YMMV. Thanks to [diotalevi]
+from perlmonks for the base implementation of this.
+
+Added support for weakreferences. Under some circumstances weakrefs caused DDS
+to get very confused, and there was no support for recreating weakrefs in the 
+structure. This has been rectified. Its possible that output including weakrefs
+may not eval correctly as the restored data may be missing external references
+that keep the overall data structure alive. For instance if everything in the
+dump is a weakref the resulting vars may have returned to undef prior to completing
+the eval. YMMV. Thanks to [ysth] from perlmonks for the pointer to how weakrefs work.
+
+Added method behaviour to Dump() so its not just subroutine based. This should make
+using it as a method more or less DWIM. Also thanks to [diotalevi]
+
+Added support for dumping the lexical context of CODE refs. Heavily experimental,
+YMMV.

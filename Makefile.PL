@@ -66,10 +66,12 @@ WriteMakefile(
     'NAME'         => 'Data::Dump::Streamer',
     'VERSION_FROM' => 'lib/Data/Dump/Streamer.pm',    # finds $VERSION
     'PREREQ_PM'    => {
-        'Text::Balanced'  => 1.95,
-        'Algorithm::Diff' => 1.15,
+        'Text::Balanced'  => undef,
+        #'Algorithm::Diff' => undef,
         'Test::More'      => undef,
-        'Data::Dumper'    => 2.121
+        #'Data::Dumper'    => undef,
+        'B::Deparse'      => undef,
+        'B::Utils'        => undef,
     },                                         # e.g., Module::Name => 1.1
     (
         $] >= 5.005

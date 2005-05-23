@@ -1,3 +1,4 @@
+# this is from the Scalar::Utils distro
 use Data::Dump::Streamer qw(reftype);
 use vars qw($t $y $x *F);
 use Symbol qw(gensym);
