@@ -1,7 +1,12 @@
 use strict;
 use warnings;
 use Test::More;
-use Algorithm::Diff qw(sdiff diff);
+use Data::Dumper;
+use vars qw/%Has/;
+BEGIN {
+    $Has{diff}=!!eval "use Algorithm::Diff qw(sdiff diff); 1";
+    $Has{sortkeys}=!!eval "Data::Dumper->new([1])->Sortkeys(1)->Dump()";
+}  
 
 # all of this is acumulated junk used for making the various test easier.
 # as a close inspection shows, this all derives from different periods of
@@ -135,11 +140,13 @@ sub _dumper {
 
 sub vstr {Data::Dump::Streamer::__vstr(@_)}
 
+our $Clean;
+
 sub normalize {
     my @x=@_;
     foreach (@x) {
         #warn "<before>\n$_</before>\n";
-        s/^\s*use.*\n//gm;
+        s/^\s*(no|use).*\n//gm;
         s/^\s*BEGIN\s*\{.*\}\n//gm;
         s/\A(?:\s*(?:#\*\.*)?\n)+//g;
         if (/^\s+(#\s*)/) {
@@ -150,6 +157,7 @@ sub normalize {
         s/\r\n/\n/g;
         s/\s+$//gm;
         $_.="\n";
+        
         #warn "<after>\n$_</after>\n";
     }
     unless (defined wantarray)  {
@@ -258,8 +266,10 @@ test_dump(
 
 my %Methods=(
                 'Data::Dumper'=>'->new(sub{\\@_}->(@_))'.
-                                '->Purity(1)->Sortkeys(1)'.
-                                '->Quotekeys(1)->Useperl(1)'.
+                                '->Purity(1)'.
+                                '->Sortkeys(1)'.
+                                '->Quotekeys(1)'.
+                                '->Useperl(1)'.
                                 '->Dump()',
                 'Data::Dump::Streamer'=>'->Data(@_)->Out()',
             );
@@ -312,6 +322,15 @@ my %mdchar=(u=>'|','+'=>'>','-'=>'<','c'=>'*');
 
 sub _my_diff {
     my ($e,$g,$mode)=@_;
+    
+    unless ($Has{diff}) {
+        if ($e ne $g) {
+            return join "\n","Expected:",$e,"Got:",$g,""
+        } else {
+            return
+        }
+    }
+        
 
     my @exp=split /\n/,$e;
     my @got=split /\n/,$g;
@@ -385,31 +404,40 @@ sub _eq {
 #    test_dump( {name=>"merlyns test 2",
 #                verbose=>1}, $o, ( \\@a ),
 #               <<'EXPECT',  );
+$::Pre_Eval = "";
+$::Post_Eval = "";
+$::No_Dumper = 0;
+$::No_Redump = 0;
 
 sub test_dump {
-    my ($test,$obj)=splice @_,0,2;
-    my $exp=normalize(pop @_);
+    my $test = shift;
+    my $obj  = shift;
+    my $exp  = normalize(pop @_);
     # vars are now left in @_
 
-    $test={
-            name=>$test,
-            pre_eval=>'',
-            post_eval=>'',
-            no_dumper=>0,
-            no_redump=>0,
-          } unless ref $test;
+    $test = {
+                name      => $test,
+          } 
+        unless ref $test;
 
+    $test->{pre_eval}= $::Pre_Eval unless exists $test->{pre_eval};
+    $test->{post_eval}= $::Post_Eval unless exists $test->{post_eval};
+    $test->{no_dumper}= $::No_Dumper unless exists $test->{no_dumper};
+    $test->{no_redump}= $::No_Redump unless exists $test->{no_redump};
 
+    $test->{verbose} = 1 
+        if not exists $test->{verbose} and $ENV{TEST_VERBOSE};
 
-
-    $test->{verbose}=1 if not exists $test->{verbose} and $ENV{TEST_VERBOSE};
+    $test->{no_dumper} = 1 if !$Has{sortkeys};
 
     my @res=_dmp($obj,NO_EVAL,@_);
+    
     if (@res==2) {
         diag "Error:\n",$res[1];
-        nok($test->{name});
+        fail($test->{name});
         return
     }
+    
     my $to_dump=$obj->{out_names};
     my $to_decl=$obj->Declare ? [] : $obj->{declare}||[];
 
@@ -432,7 +460,7 @@ sub test_dump {
 
     my $ok= @dmp<2 &&
             _eq($exp, \@res,$test,"Expected")   &&
-            _eq($exp, \@reres,$test,"Second tume") &&
+            _eq($exp, \@reres,$test,"Second time") &&
             _eq(\@dmp,\@redmp,$test,"Both Dumper's same ");
 
     unless ($ok) {
@@ -444,3 +472,4 @@ sub test_dump {
 
 
 
+1;

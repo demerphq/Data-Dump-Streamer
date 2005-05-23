@@ -14,10 +14,12 @@
  * alias_ref is from Lexical::Alias by Jeff Pinyan which
  * was borrowed/modified from Devel::LexAlias by Richard Clamp
  *
+ *
  * Additional Code and Modifications
  * Copyright 2003 Yves Orton.
  * This library is free software; you can redistribute it and/or
  * modify it under the same terms as Perl itself.
+ *
  */
 
 #ifdef __cplusplus
@@ -44,9 +46,35 @@ extern "C" {
 #   define BFD_Svs_SMG_OR_RMG SVs_RMG
 #elif PERL_SUBVERSION>=1
 #   define BFD_Svs_SMG_OR_RMG SVs_SMG
+#   define MY_PLACEHOLDER PL_sv_placeholder
 #else
 #   define BFD_Svs_SMG_OR_RMG SVs_RMG
+#   define MY_PLACEHOLDER PL_sv_undef
 #endif
+#if (((PERL_VERSION == 8) && (PERL_SUBVERSION >= 1)) || (PERL_VERSION > 8))
+#define MY_CAN_FIND_PLACEHOLDERS
+#define HAS_SV2OBJ
+#endif
+
+#ifdef SvWEAKREF
+
+#   ifndef PERL_MAGIC_backref
+#       define PERL_MAGIC_backref	  '<'
+#   endif
+
+#define ADD_WEAK_REFCOUNT do {                          \
+        MAGIC *mg = NULL;                               \
+        if( SvMAGICAL(sv)                               \
+            && (mg = mg_find(sv, PERL_MAGIC_backref) )  \
+        ){                                              \
+            AV *av = (AV *)mg->mg_obj;                  \
+            RETVAL += av_len(av)+1;                     \
+        }                                               \
+    } while (0)                             
+#else
+#define ADD_WEAK_REFCOUNT
+#endif
+
 
 #if PERL_VERSION < 7
 /* Not in 5.6.1. */
@@ -182,10 +210,23 @@ XS(XS_Data__Dump__Streamer_SvREFCNT)	/* This is dangerous stuff. */
     XSRETURN_UNDEF; /* Can't happen. */
 }
 
+/* this is from B is perl 5.9.2 */
+typedef SV	*B__SV;
+
+MODULE = B	PACKAGE = B::SV
+
+#ifndef HAS_SV2OBJ
+
+#define object_2svref(sv)	sv
+#define SVREF SV *
+	
+SVREF
+object_2svref(sv)
+	B::SV	sv
+
+#endif	
 
 MODULE = Data::Dump::Streamer		PACKAGE = Data::Dump::Streamer
-
-
 
 void
 dualvar(num,str)
@@ -326,18 +367,40 @@ CODE:
 OUTPUT:
     RETVAL
 
+
+void
+weaken(sv)
+	SV *sv
+PROTOTYPE: $
+CODE:
+#ifdef SvWEAKREF
+        sv_rvweaken(sv);
+        XSRETURN_YES;
+#else
+	croak("weak references are not implemented in this release of perl");
+#endif
+
+void
+isweak(sv)
+	SV *sv
+PROTOTYPE: $
+CODE:
+#ifdef SvWEAKREF
+	ST(0) = boolSV(SvROK(sv) && SvWEAKREF(sv));
+	XSRETURN(1);
+#else
+	XSRETURN_NO;
+#endif
+
+
 IV
-refcount(sv)
+weak_refcount(sv)
     SV * sv
 PROTOTYPE: $
 CODE:
 {
-    if(!SvROK(sv)) {
-	RETVAL=0;
-    } else {
-        sv = (SV*)SvRV(sv);
-        RETVAL = SvREFCNT(sv);
-    }
+    RETVAL=0;
+    ADD_WEAK_REFCOUNT;
 }
 OUTPUT:
     RETVAL
@@ -349,6 +412,24 @@ PROTOTYPE: $
 CODE:
 {
     RETVAL = SvREFCNT(sv);
+    ADD_WEAK_REFCOUNT;
+}
+OUTPUT:
+    RETVAL
+
+IV
+refcount(sv)
+    SV * sv
+PROTOTYPE: $
+CODE:
+{
+    if(!SvROK(sv)) {
+	RETVAL=0;
+    } else {
+        sv = (SV*)SvRV(sv);
+        RETVAL = SvREFCNT(sv);
+        ADD_WEAK_REFCOUNT;
+    }
 }
 OUTPUT:
     RETVAL
@@ -679,7 +760,7 @@ OUTPUT:
 
 
 
-SV *
+void
 regex(sv)
     SV * sv
 PROTOTYPE: $
@@ -840,7 +921,8 @@ PPCODE:
     XSRETURN_UNDEF;
 }
 
-#if PERL_VERSION >= 8
+
+#ifdef MY_CAN_FIND_PLACEHOLDERS
 
 void
 all_keys(hash,keys,placeholder)
@@ -872,7 +954,7 @@ all_keys(hash,keys,placeholder)
         (void)hv_iterinit(hv);
 	while((he = hv_iternext_flags(hv, HV_ITERNEXT_WANTPLACEHOLDERS))!= NULL) {
 	    key=hv_iterkeysv(he);
-            if (HeVAL(he) == &PL_sv_placeholder) {
+            if (HeVAL(he) == &MY_PLACEHOLDER) {
                 SvREFCNT_inc(key);
 	        av_push(av_p, key);
             } else {
@@ -896,11 +978,10 @@ hidden_keys(hash)
 	   croak("First argument to hidden_keys() must be an HASH reference");
 
 	hv = (HV*)SvRV(hash);
-
         (void)hv_iterinit(hv);
 	while((he = hv_iternext_flags(hv, HV_ITERNEXT_WANTPLACEHOLDERS))!= NULL) {
 	    key=hv_iterkeysv(he);
-            if (HeVAL(he) == &PL_sv_placeholder) {
+            if (HeVAL(he) == &MY_PLACEHOLDER) {
                 XPUSHs( key );
             }
         }
@@ -924,6 +1005,7 @@ legal_keys(hash)
 	    key=hv_iterkeysv(he);
             XPUSHs( key );
         }
+
 
 #endif
 

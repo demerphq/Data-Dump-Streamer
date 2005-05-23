@@ -1,5 +1,4 @@
 use Test::More tests => 41;
-use lib './lib';
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump) ); }
 use strict;
 use warnings;
@@ -403,7 +402,7 @@ EXPECT
     my $r = "This contains unicode: /\x{263A}/";
     my $qr= qr/$r/;
     test_dump( {name=>"Unicode qr// and string",
-                no_dumper=>1,verbose=>1}, $o, ( $r,$qr ),
+                no_dumper => 1, verbose => 1 }, $o, ( $r,$qr ),
                <<'EXPECT',  );
 $VAR1 = "This contains unicode: /\x{263a}/";
 $Regexp1 = qr!This contains unicode: /\x{263a}/!;

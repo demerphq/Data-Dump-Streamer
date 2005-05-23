@@ -1,6 +1,6 @@
 use vars qw /$TESTS/;
 use Test::More tests=>2+($TESTS=9);
-use lib './lib';
+
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump) ); }
 use strict;
 use warnings;
@@ -19,10 +19,12 @@ my $dump;
 my $o = Data::Dump::Streamer->new();
 isa_ok( $o, 'Data::Dump::Streamer' );
 SKIP:{
-      skip "No locked hashes before 5.8",
+      skip "No locked hashes before 5.8.0",
            $TESTS
       if $]<5.008;
-
+      skip "Can't tell which keys are locked before 5.8.1",
+           $TESTS
+      if $]==5.008;
 {
     my %h = ('a0'..'a9');
     lock_keys(%h);

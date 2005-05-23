@@ -1,10 +1,16 @@
 use Test::More tests => 6;
 
-BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump) ); }
+BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump weaken) ); }
 use strict;
 use warnings;
 use Data::Dumper;
 
+SKIP:{
+    my ($_item,$_ref);
+    $_ref=\$_item;
+    skip ( "No Weak Refs", 5 )
+        unless eval { weaken($_ref) };
+    
 # imports same()
 (my $helper=$0)=~s/\w+\.\w+$/test_helper.pl/;
 require $helper;
@@ -37,7 +43,7 @@ isa_ok( $o, 'Data::Dump::Streamer' );
     $x = \$y;
     $y = \$x;
     $qr = bless qr/this is a test/m, 'foo_bar';
-
+    weaken($y);
     my $array = [];
     my $hash = bless {
         A      => \$array,
@@ -63,6 +69,7 @@ alias_av(@$ARRAY1, 1, $ARRAY1->[0]);
 EXPECT
 
 
+
     #same( $dump = $o->Data( $cap,$array,$boo,$hash,$qr )->Out, <<'EXPECT', "Total Madness", $o );
     same( "Total Madness", $o,<<'EXPECT',( $cap,$array,$boo,$hash,$qr ) );
 $ARRAY1 = [
@@ -75,6 +82,7 @@ $ARRAY1 = [
           ];
 $ARRAY1->[0] = \$ARRAY1->[1];
 $ARRAY1->[1] = \$ARRAY1->[0];
+weaken($ARRAY1->[1]);
 alias_av(@$ARRAY1, 3, $ARRAY1->[0]);
 alias_av(@$ARRAY1, 4, $ARRAY1->[1]);
 $ARRAY2 = [
@@ -109,6 +117,7 @@ alias_av(@$ARRAY1, 5, $foo_bar1);
 EXPECT
 
 
+
 }
 {
     my ($x,$y);
@@ -118,7 +127,8 @@ EXPECT
     my $a=[1,2];
     $a->[0]=\$a->[1];
     $a->[1]=\$a->[0];
-
+    weaken($a->[1]);
+    weaken($x);
     #$cap->[-1]=5;
     my $s;
     $s=\$s;
@@ -143,6 +153,7 @@ $ARRAY1 = [
           ];
 $ARRAY1->[0] = \$ARRAY1->[1];
 $ARRAY1->[1] = \$ARRAY1->[0];
+weaken($ARRAY1->[1]);
 $Regexp1 = qr/foo/;
 $bar1 = bless( qr/bar/, 'bar' );
 $REF1 = \bless( qr/baz/, 'baz' );
@@ -178,6 +189,7 @@ $ARRAY2->[1] = \$ARRAY5->[0];
 $ARRAY3->[1] = $ARRAY2->[0];
 $ARRAY3->[2] = $ARRAY2->[1];
 $ARRAY5->[0] = $ARRAY2->[0];
+weaken($ARRAY5->[0]);
 $ARRAY5->[1] = $ARRAY2->[1];
 alias_ref(\$ARRAY6,\$ARRAY5);
 alias_ref(\$VAR5,\$VAR1);
@@ -190,11 +202,16 @@ $HASH2 = {
          };
 alias_hv(%$HASH2, 'foo2', $HASH2->{foo});
 EXPECT
+
 }
 {
+    skip ( "Causes error at global destruction on 5.8.0", 1 )
+        if $]==5.008;
     #local $Data::Dump::Streamer::DEBUG = 1;
     my $x;
     $x = sub { \@_ }->( $x, $x );
+    my $y = $x; #keep it alive 
+    weaken($x);
     push @$x, $x;
     same(   "Tye Alias Array", $o, <<'EXPECT',( $x ) );
 $ARRAY1 = [
@@ -205,8 +222,13 @@ $ARRAY1 = [
 alias_av(@$ARRAY1, 0, $ARRAY1);
 alias_av(@$ARRAY1, 1, $ARRAY1);
 $ARRAY1->[2] = $ARRAY1;
+weaken($ARRAY1);
 EXPECT
 }
+undef $o;
+
+}
+
 __END__
 # with eval testing
 {
