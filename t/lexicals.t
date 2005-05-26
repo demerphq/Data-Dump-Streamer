@@ -2,7 +2,7 @@ use strict;
 use warnings;
 
 use Data::Dump::Streamer;
-use Test::More tests => 11;
+use Test::More tests => 14;
 (my $helper=$0)=~s/\w+\.\w+$/test_helper.pl/;
 require $helper;
 
@@ -230,6 +230,87 @@ EXPECT
 
 
 }
+{
+
+    my $a = "foo";
+    my $x = sub { return $a . "bar" };
+    sub f { print $x->() }
+    test_dump(  "recursively nested subs", scalar(Dump()), ( \&f ), <<'EXPECT');
+my ($a,$x);
+$a = 'foo';
+$x = sub {
+       return $a . 'bar';
+     };
+$CODE1 = sub {
+           print &$x();
+         };
+EXPECT
+}
+{
+    test_dump(  "EclipseName", Dump->EclipseName('%d_foiled_%s'), 
+        ( [
+              map {
+                my $x;
+                my $x_eclipse_1;
+                sub {$x}, sub {$x_eclipse_1};
+              } 1, 2
+            ] ), <<'EXPECT');
+my ($1_foiled_x,$1_foiled_x_eclipse_1,$x,$x_eclipse_1);
+$1_foiled_x = undef;
+$1_foiled_x_eclipse_1 = undef;
+$x = undef;
+$x_eclipse_1 = undef;
+$ARRAY1 = [
+            sub {
+              $x;
+            },
+            sub {
+              $x_eclipse_1;
+            },
+            sub {
+              $1_foiled_x;
+            },
+            sub {
+              $1_foiled_x_eclipse_1;
+            }
+          ];
+
+EXPECT
+
+}
+{
+    test_dump(  "EclipseName 2", Dump->EclipseName('%s_muhaha_%d'), 
+        ( [
+              map {
+                my $x;
+                my $x_eclipse_1;
+                sub {$x}, sub {$x_eclipse_1};
+              } 1, 2
+            ] ), <<'EXPECT');
+my ($x,$x_eclipse_1,$x_eclipse_1_muhaha_1,$x_muhaha_1);
+$x = undef;
+$x_eclipse_1 = undef;
+$x_eclipse_1_muhaha_1 = undef;
+$x_muhaha_1 = undef;
+$ARRAY1 = [
+            sub {
+              $x;
+            },
+            sub {
+              $x_eclipse_1;
+            },
+            sub {
+              $x_muhaha_1;
+            },
+            sub {
+              $x_eclipse_1_muhaha_1;
+            }
+          ];
+EXPECT
+
+}
+
+
 if (0){
     #no warnings;
     my @close;
