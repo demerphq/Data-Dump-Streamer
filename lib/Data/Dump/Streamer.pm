@@ -27,8 +27,8 @@ use vars qw(
 $DEBUG=0;
 
 BEGIN {
-    $VERSION   ='1.11';
-    $XS_VERSION='1.11';
+    $VERSION   ='1.12';
+    $XS_VERSION='1.12';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
 
@@ -270,6 +270,52 @@ and some need only be set before the C<Out()> phase.
 
 Attributes once set last the lifetime of the object, unless explicitly reset.
 
+=head3 Caveats Dumping Closures (CODE Refs)
+
+As of version 1.11 DDS has had the ability to dump closures properly. This means 
+that the lexicals that are bound to the closure are dumped along with the 
+subroutine that uses them. This makes it much easier to debug code that uses 
+closures and to a certain extent provides a persistancy framework for closures. 
+The way this works is that DDS figures out what all the lexicals are that are 
+bound to CODE refs it is dumping and then pretends that it had originally been 
+called with all of them as its arguements.
+
+One consequence of the way the dumping process works is that all of the 
+recreated subroutines will be in the same scope. This of course can lead to 
+collisions as two subroutines can easily be bound to different variables that 
+have the same name. 
+
+The way that DDS resolves these collisions is that it renames one of the variables 
+with a special name so that presumably there are no collisions.  
+However this process is very simplistic, no checks currently occur to prevent 
+collisions with other lexicals or other globals that may be 
+used by the dumped code.  In some situations it may be necessary to change the
+default value of the rename template which may be done by using the C<EclipseName>
+method.
+
+Similarly to the problem of colliding lexicals is the problem of colliding
+lexicals and globals. DDS pays no attention to globals when dumping closures
+which can potentially result in lexicals being declared that will eclipse their
+global namesake. There is currently no way around this other than to avoid
+accessing a global and a lexical with the same name from the subs being dumped. 
+And example is
+
+  my $a=sub { $a++ }; 
+  Dump( sub { $a->() } );
+
+which will not be dumped correctly. Generally speaking this kind of thing is
+bad practice anyway, so this could probably be viewed as a less than desirable
+"feature". :-)
+
+Generally if the closures being dumped avoid accessing lexicals and globals 
+with the same name from out of scope and that all of the CODE being dumped 
+avoids vars with the C<EclipseName> in their names the dumps should be valid 
+and should eval back into existance properly.
+
+Note that the behaviour of dumping closures is subject to change in future versions
+as its possible that I will put some additional effort into more sophisiticated
+ways of avoiding name collisions in the dump.
+
 =head3 Controlling Hash Traversal and Display Order
 
 Data::Dump::Streamer supports a number of ways to control the traversal order of hashes.
@@ -436,6 +482,7 @@ sub new {
             indentcols   => 2,         # indent this numbe of cols
             ro           => 1,         # track readonly vars
             dualvars     => 1,         # dump dualvars
+            eclipsename  => "%s_eclipse_%d",
 
             purity       => 1,         # test
 
@@ -1115,13 +1162,22 @@ PASS:{
                         if ( !$lex_addr{$addr} ) {
                             $lex_addr{$addr}=$used->{$name};
                             if ( $lex_name{$name} ) {
-                                my $tmpname=sprintf "%s_eclipse_%d",
-                                                $name,++$lex_special{$name};
+                                my $tmpname=sprintf "%s".$self->{style}{eclipsename},
+                                                substr($name,0,1),
+                                                $self->{style}{eclipsename}=~/^[^%]*%s/ 
+                                                   ? ( substr($name,1),
+                                                       ++$lex_special{$name}, )
+                                                   : ( ++$lex_special{$name},
+                                                       substr($name,1), );
                                 $lex_name{$tmpname}=$addr;
                                 $lex_addr2name{$addr}=$tmpname;
+                                $self->_add_queue(\@queue,reftype_or_glob $used->{$name},
+                                    $used->{$name},$cdepth+1,$tmpname,2);
                             } else {
                                 $lex_name{$name}=$addr;
                                 $lex_addr2name{$addr}=$name;
+                                $self->_add_queue(\@queue,reftype_or_glob $used->{$name},
+                                    $used->{$name},$cdepth+1,$name,2);
                             }
                         }
                     }
@@ -2649,6 +2705,26 @@ the setting of C<CodeStub()>.
 Caveat Emptor, dumping subroutine references is hardly a secure act, and it is
 provided here only for convenience.
 
+Note using this routine is at your own risk as of DDS 1.11, how it interacts with
+the newer advanced closure dumping process is undefined.
+
+=for UEDIT
+sub EclipseName {}
+
+=item EclipseName
+
+=item EclipseName SPRINTF_FORMAT
+
+When necessary DDS will rename vars output during deparsing with this value.
+It is a sprintf format string that should contain only and both of "%s" and a "%d" 
+in any order along with any other part of the string. No checks are performed on 
+the validity of this value. It defaults to
+
+  "%s_eclipse_%d"
+  
+where the %s represents the name of the var being eclipsed, and the %d a counter
+to ensure all such mappings are unique.  
+
 =for UEDIT
 sub DeparseOpts {}
 
@@ -2664,6 +2740,9 @@ the arguments. If passed an array reference then this array is assumed to
 contain a list of arguments. If no arguments are provided returns a
 an array ref of arguments in scalar context, and a list of arguments in
 list context.
+
+Note using this routine is at your own risk as of DDS 1.11, how it interacts with
+the newer advanced closure dumping process is undefined.
 
 =for UEDIT
 sub CodeStub {}
@@ -2841,12 +2920,12 @@ ignored. Has the same calling semantics as FreezeClass.
 B<NOTE:>
 Must be set before C<Data()> is called.
 
-=for UEDIT
-sub DeparseOpts {}
-
 =cut
 
-sub DeparseOpts {
+# weird styling here deliberate.
+sub 
+DeparseOpts 
+{
     my $self=shift;
     if (@_) {
         if (ref $_[0]) {
@@ -2907,7 +2986,8 @@ sub HashKeys {
 my %scalar_meth=map{ $_ => lc($_)}
       qw(Declare Indent IndentCols SortKeys Sortkeys IndentKeys
         Verbose DumpGlob Deparse DeparseGlob DeparseFormat CodeStub
-        FormatStub Rle RLE Purity DualVars Dualvars Freeze Thaw);
+        FormatStub Rle RLE Purity DualVars Dualvars Freeze Thaw
+        EclipseName);
 my %hash_meth=map {$_ => lc($_)} qw(FreezeClass ThawClass IgnoreClass);
 
 sub AUTOLOAD {
