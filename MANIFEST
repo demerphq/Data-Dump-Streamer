@@ -30,3 +30,4 @@ t/sortkeys.t
 t/test_helper.pl
 t/tree.t
 t/locked.t
+t/as.t

@@ -92,3 +92,17 @@ using it as a method more or less DWIM. Also thanks to [diotalevi]
 
 Added support for dumping the lexical context of CODE refs. Heavily experimental,
 YMMV.
+
+1.12 
+
+Dan Brook noticed that closures that referenced closures were not being handled properly
+as the code wasnt iterating into the nested closures. This is fixed now. 
+
+1.14
+
+Jim Cromie put together a patch to make aliasing less intrusive. As the term alias was
+fairly heavily used already I changed his 'alias' mechanism to 'as', blame me not him 
+for the silly name. Also includes a few minor fixes, and a little bit of pod cleanup.
+
+
+
