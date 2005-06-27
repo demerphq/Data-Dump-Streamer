@@ -66,21 +66,23 @@ WriteMakefile(
     'NAME'         => 'Data::Dump::Streamer',
     'VERSION_FROM' => 'lib/Data/Dump/Streamer.pm',    # finds $VERSION
     'PREREQ_PM'    => {
-        'Text::Balanced'  => undef,
         #'Algorithm::Diff' => undef,
-        'Test::More'      => undef,
         #'Data::Dumper'    => undef,
-        'B::Deparse'      => undef,
-        'B::Utils'        => undef,
-    },                                         # e.g., Module::Name => 1.1
+        'Text::Balanced'  => 0,
+        'Test::More'      => 0,
+        'B::Deparse'      => 0,
+        'B::Utils'        => 0,
+    },                                         
     (
         $] >= 5.005
         ?                                      ## Add these new keywords supported since 5.005
           (
             ABSTRACT_FROM => 'lib/Data/Dump/Streamer.pm',                 # retrieve abstract from module
-            AUTHOR        => 'Yves Orton <demerphq@hotmail.com>'
+            AUTHOR        => 'Yves Orton (demerphq)'
           )
-        : ()
+        : (
+            ABSTRACT => qq[Stream a highly accurate easy to read data dump in perl code form to a var or file. (Also known as 'DDS')]
+        )
     ),
     ($xs_version ? (XS_VERSION => $xs_version) : () ),
     dist => {COMPRESS => 'gzip -9f', SUFFIX => 'gz',},

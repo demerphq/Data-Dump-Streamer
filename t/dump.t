@@ -45,6 +45,7 @@ $VAR1 = *::foo;
 EXPECT
 }
 {
+    local $\="\n";
     same(   "Bart's Refs", $o,<<'EXPECT', ( \{},\[],\do{my $x="foo"},\('bar') ) );
 $REF1 = \{};
 $REF2 = \[];
