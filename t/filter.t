@@ -21,14 +21,14 @@ isa_ok( $o, 'Data::Dump::Streamer' );
     my $ig=bless {},"Ignore";
     my %h=(One=>1,Two=>2,Three=>$ig);
 
-    same( $dump = $o->IgnoreClass('Ignore'=>1)->Data( \%h )->Out, <<'EXPECT', "Ignore(1)", $o );
+    same( $dump = $o->Ignore('Ignore'=>1)->Data( \%h )->Out, <<'EXPECT', "Ignore(1)", $o );
 $HASH1 = {
            One   => 1,
            Three => 'Ignored Obj [Ignore=HASH(0x24b89cc)]',
            Two   => 2
          };
 EXPECT
-    same( $dump = $o->IgnoreClass('Ignore'=>0)->Data( \%h )->Out, <<'EXPECT', "Ignore(0)", $o );
+    same( $dump = $o->Ignore('Ignore'=>0)->Data( \%h )->Out, <<'EXPECT', "Ignore(0)", $o );
 $HASH1 = {
            One   => 1,
            Three => bless( {}, 'Ignore' ),
@@ -38,39 +38,45 @@ EXPECT
 
 }
 {
-    sub FreezeThaw::Freeze {
+    #$Data::Dump::Streamer::DEBUG=1;
+    sub Water::DDS_freeze {
         my ($self)=@_;
-        $_[0]=bless \do{my $x=join "-",@$self},ref $self;
+        return bless(\do{my $x=join "-",@$self},ref $self),
+               'DDS_thaw';
     }
-    sub FreezeThaw::Thaw {
+    sub Water::DDS_thaw {
         my ($self)=@_;
-        $_[0]=bless [ map {split /-/,$_ } $$self ],ref $self;
+        $_[0]= bless([ map {split /-/,$_ } $$self ],ref $self);
     }
-    my $ig=bless ["A".."D"],"FreezeThaw";
+    sub Water::Freeze {
+        my ($self)=@_;
+        return bless(\do{my $x=join "-",@$self},ref $self),
+               '->DDS_thaw';
+    }
+    sub Juice::Freeze {
+        my ($self)=@_;
+        return bless(\do{my $x=join "-",@$self},ref $self),
+               'Thaw';
+    }
+    sub Juice::Thaw {
+        my ($self)=@_;
+        $_[0]= bless([ map {split /-/,$_ } $$self ],ref $self);
+    }
+    my $ig=bless ["A".."D"],"Water";
     my %h=(One=>1,Two=>2,Three=>$ig);
 
-    same( $dump = $o->FreezeClass('FreezeThaw'=>'Freeze')
-                    ->ThawClass('FreezeThaw'=>'Thaw')
-    ->Data( \%h )->Out, <<'EXPECT', "FreezeThaw", $o );
+    same( $dump = $o->Data( \%h )->Out, <<'EXPECT', "FreezeThaw", $o );
 $HASH1 = {
            One   => 1,
-           Three => bless( \do { my $v = 'A-B-C-D' }, 'FreezeThaw' ),
+           Three => bless( \do { my $v = 'A-B-C-D' }, 'Water' ),
            Two   => 2
          };
-$HASH1->{Three}->Thaw();
+$HASH1->{Three}->DDS_thaw();
 EXPECT
-    same( $dump = $o->FreezeClass('FreezeThaw'=>'Freeze')
-                    ->ThawClass('FreezeThaw'=>'->Thaw')
-    ->Data( \%h )->Out, <<'EXPECT', "FreezeThaw ->", $o );
-$HASH1 = {
-           One   => 1,
-           Three => bless( \do { my $v = 'A-B-C-D' }, 'FreezeThaw' )->Thaw(),
-           Two   => 2
-         };
-EXPECT
-    same( $dump = $o->FreezeClass('FreezeThaw'=>'')
-                    ->ThawClass('FreezeThaw'=>'')
-    ->Data( \%h )->Out, <<'EXPECT', "FreezeThaw False", $o );
+    {
+    no warnings 'redefine';
+    local *Water::DDS_freeze=sub { return };
+    same( $dump = $o->Data( \%h )->Out, <<'EXPECT', "FreezeThaw Localization 2", $o );
 $HASH1 = {
            One   => 1,
            Three => bless( [
@@ -78,21 +84,24 @@ $HASH1 = {
                       'B',
                       'C',
                       'D'
-                    ], 'FreezeThaw' ),
+                    ], 'Water' ),
            Two   => 2
          };
 EXPECT
-    same( $dump = $o->FreezeThaw('FreezeThaw'=>'Freeze','->Thaw')
-    ->Data( \%h )->Out, <<'EXPECT', "FreezeThaw()", $o );
+    }
+    {
+
+    same( $dump = $o->Freezer('Freeze')->Data( \%h )->Out, <<'EXPECT', "FreezeThaw Localization 3", $o );
 $HASH1 = {
            One   => 1,
-           Three => bless( \do { my $v = 'A-B-C-D' }, 'FreezeThaw' )->Thaw(),
+           Three => bless( \do { my $v = 'A-B-C-D' }, 'Water' )->DDS_thaw(),
            Two   => 2
          };
 EXPECT
-    $o->FreezeClass();
-    $o->ThawClass();
-    same( $dump = $o->Data( \%h )->Out, <<'EXPECT', "FreezeThaw False", $o );
+    }
+    {
+
+    same( $dump = $o->Freezer('')->Data( \%h )->Out, <<'EXPECT', "FreezeThaw Localization 3", $o );
 $HASH1 = {
            One   => 1,
            Three => bless( [
@@ -100,10 +109,22 @@ $HASH1 = {
                       'B',
                       'C',
                       'D'
-                    ], 'FreezeThaw' ),
+                    ], 'Water' ),
            Two   => 2
          };
 EXPECT
+    }
+
+    {
+    same( $dump = $o->ResetFreezer()->Data( \%h )->Out, <<'EXPECT', "ResetFreezer()", $o );
+$HASH1 = {
+           One   => 1,
+           Three => bless( \do { my $v = 'A-B-C-D' }, 'Water' ),
+           Two   => 2
+         };
+$HASH1->{Three}->DDS_thaw();
+EXPECT
+    }
 
 }__END__
 # with eval testing
