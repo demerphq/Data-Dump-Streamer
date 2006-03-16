@@ -18,7 +18,7 @@ $::No_Dumper=$::No_Dumper=1;
         my @v=(@v,1);
         my @y=('b','a','r');
         my $x = join " ", @_, @v, $v, $z;
-        
+
         sub {
             my @y = ( $x, "A".."G", @y);
             my @v = ( "M".."R", @v);
@@ -30,8 +30,8 @@ $::No_Dumper=$::No_Dumper=1;
             my @y=split //,'fuzz';
             sub { return join "+",$z,$x,@y;}
         },
-        
-    }   
+
+    }
 }
 
 
@@ -75,10 +75,10 @@ EXPECT
 
 {
 #    local $Data::Dump::Streamer::DEBUG=1;
-    
+
     my $x;
     $x = sub { $x };
-    
+
     test_dump( "Self-referential", scalar(Dump()),( $x ), <<'EXPECT');
 $x = sub {
        $x;
@@ -104,7 +104,7 @@ EXPECT
 }
 
 {
-    
+
     my $a;
     my $b;
     my $z = sub { $a, $b };
@@ -125,7 +125,7 @@ EXPECT
 }
 
 {
-    
+
     my $a;
     my $z = sub { $a };
     my $b;
@@ -181,7 +181,7 @@ EXPECT
     my $a;
     my $z = sub { $a };
 
-    test_dump(  "Shared state/enclosed", scalar(Dump()), ( $z, sub { $a, $z } ), 
+    test_dump(  "Shared state/enclosed", scalar(Dump()), ( $z, sub { $a, $z } ),
         <<'EXPECT');
 my ($a);
 $a = undef;
@@ -193,8 +193,8 @@ $CODE1 = sub {
          };
 EXPECT
 
-    test_dump(  "Named  Shared state/enclosed", scalar(Dump())->Names('foo','bar'), 
-        ( $z, sub { $a, $z } ), 
+    test_dump(  "Named  Shared state/enclosed", scalar(Dump())->Names('foo','bar'),
+        ( $z, sub { $a, $z } ),
         <<'EXPECT');
 my ($a);
 $a = undef;
@@ -207,10 +207,11 @@ $bar = sub {
 EXPECT
 }
 {
+
     no warnings;
     our $b;
-    my $a; 
-    my $b = sub { $b }; 
+    my $a;
+    my $b = sub { $b };
 
     test_dump(  "sub b", scalar(Dump()), ( $b ), <<'EXPECT');
 $CODE1 = sub {
@@ -218,7 +219,7 @@ $CODE1 = sub {
          };
 EXPECT
 
-    test_dump(  "double sub b", scalar(Dump()), ( sub { $b } ), <<'EXPECT');    
+    test_dump(  "double sub b", scalar(Dump()), ( sub { $b } ), <<'EXPECT');
 my ($b);
 $b = sub {
        $b;
@@ -247,7 +248,7 @@ $CODE1 = sub {
 EXPECT
 }
 {
-    test_dump(  "EclipseName", Dump->EclipseName('%d_foiled_%s'), 
+    test_dump(  "EclipseName", Dump->EclipseName('%d_foiled_%s'),
         ( [
               map {
                 my $x;
@@ -279,7 +280,7 @@ EXPECT
 
 }
 {
-    test_dump(  "EclipseName 2", Dump->EclipseName('%s_muhaha_%d'), 
+    test_dump(  "EclipseName 2", Dump->EclipseName('%s_muhaha_%d'),
         ( [
               map {
                 my $x;

@@ -8,11 +8,15 @@ use B::Deparse;
 use B qw(svref_2object);
 use B::Utils qw(walkoptree_filtered opgrep);
 use IO::File;
+use PadWalker qw(closed_over peek_my);
 use Data::Dumper ();
 use Data::Dump::Streamer::_::Printers;
 use Symbol;
+use Text::Abbrev qw(abbrev);
+# use overload qw("" printit); # does diabolical stuff.
 use warnings;
 use warnings::register;
+
 
 require overload;
 use vars qw(
@@ -21,20 +25,24 @@ use vars qw(
              $AUTOLOAD
              @ISA
              @EXPORT @EXPORT_OK @EXPORT_FAIL %EXPORT_TAGS
+             %Freeze
+             %Thaw
              $DEBUG
            );
 
 $DEBUG=0;
 
 BEGIN {
-    $VERSION   ='1.14';
-    $XS_VERSION='1.14';
+    $VERSION   ='2.00';
+    $XS_VERSION='2.00';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
 
-    @EXPORT=qw(Dump);
+    @EXPORT=qw(Dump DumpLex DumpNames);
     @EXPORT_OK = qw(
         Dump
+        DumpLex
+        DumpNames
         Stream
         alias_av
         alias_hv
@@ -117,7 +125,7 @@ BEGIN {
         *hidden_keys=sub(\%)  { return () };
         *legal_keys=sub(\%)   { return keys %{$_[0]} };
         *all_keys=sub(\%\@\@) { @{$_[1]}=keys %{$_[0]}; @$_[2]=(); };
-    }        
+    }
     if ( $]<5.008 ) {
             no strict 'refs';
             foreach my $sub (qw(lock_keys lock_keys_plus )) {
@@ -169,12 +177,12 @@ sub import {
     my ($idx, $alias);
 
     if ($idx = (grep lc($_[$_]) eq 'as', 0..$#_)) {
-	#print "found alias at $idx:\n";
-	($idx, $alias) = splice(@_, $idx, 2);
-	#print "found alias: $idx => $alias\n";
+        #print "found alias at $idx:\n";
+        ($idx, $alias) = splice(@_, $idx, 2);
+        #print "found alias: $idx => $alias\n";
 
-	no strict 'refs';
-	*{$alias.'::'} = *{__PACKAGE__.'::'};
+        no strict 'refs';
+        *{$alias.'::'} = *{__PACKAGE__.'::'};
     }
     $pkg->export_to_level(1,@_);
 }
@@ -217,8 +225,7 @@ sub import {
 
 =head1 NAME
 
-Data::Dump::Streamer - Stream a highly accurate easy to read data dump in perl code form to a var or file.
-(Also known as 'DDS') 
+Data::Dump::Streamer - Accurately serialize a data structure as Perl code.
 
 =head1 SYNOPSIS
 
@@ -254,196 +261,315 @@ Data::Dump::Streamer - Stream a highly accurate easy to read data dump in perl c
 
 =head1 DESCRIPTION
 
-Converts a data structure into a sequence of perl statements sufficient 
-for recreating the original via eval.  This module is very similar in 
-concept to L<Data::Dumper|Data::Dumper> and L<Data::Dump|Data::Dump>, with 
-the major differences being that this module is designed to output to a 
-stream instead of constructing its output in memory, and that the 
-traversal over the data structure is effectively breadth first versus the 
-depth first traversal done by the others.
+Given a list of scalars or reference variables, writes out
+their contents in perl syntax. The references can also be
+objects. The contents of each variable is output using the least
+number of Perl statements as convenient, usually only one.
+Self-referential structures, closures, and objects are output
+correctly.
 
-In fact the data structure is scanned twice, first in breadth first mode 
-to perform structural analysis, and then in depth first mode to actually 
-produce the output, but obeying the depth relationships of the first pass.
+The return value can be evaled to get back an identical copy
+of the original reference structure. In some cases this may
+require the use of utility subs that
+L<Data::Dump::Streamer|Data::Dump::Streamer> will optionally
+export.
 
-=head2 Usage
+This module is very similar in concept to the core module
+L<Data::Dumper|Data::Dumper>, with the major differences
+being that this module is designed to output to a stream
+instead of constructing its output in memory (trading speed
+for memory), and that the traversal over the data structure
+is effectively breadth first versus the depth first
+traversal done by the others.
 
-While Data::Dump::Streamer is at heart an object oriented module, it is 
-expected (based on experience with using L<Data::Dumper|Data::Dumper>) 
-that the common case will not exploit these features. Nevertheless the 
-method based approach is convenient and accordingly a compromise hybrid 
-approach has been provided via the C<Dump()> subroutine.
+In fact the data structure is scanned twice, first in
+breadth first mode to perform structural analysis, and then
+in depth first mode to actually produce the output, but
+obeying the depth relationships of the first pass.
 
-All attribute methods are designed to be chained together.  This means 
-that when used as set attribute (called with arguments) they return the 
-object they were called against. When used as get attributes (called 
-without arguments) they return the value of the attribute.
+=head2 Caveats Dumping Closures (CODE Refs)
 
-From an OO point of view the key methods are the C<Data()> and C<Out()> 
-methods. These correspond to the breadth first and depth first traversal, 
-and need to be called in this order. Some attributes I<must> be set prior 
-to the C<Data()> phase and some need only be set before the C<Out()> 
-phase.
-
-Attributes once set last the lifetime of the object, unless explicitly 
-reset.
-
-=head3 Caveats Dumping Closures (CODE Refs)
-
-As of version 1.11 DDS has had the ability to dump closures properly. This 
-means that the lexicals that are bound to the closure are dumped along 
-with the subroutine that uses them. This makes it much easier to debug 
-code that uses closures and to a certain extent provides a persistancy 
-framework for closure based code. The way this works is that DDS figures 
-out what all the lexicals are that are bound to CODE refs it is dumping 
-and then pretends that it had originally been called with all of them as 
+As of version 1.11 DDS has had the ability to dump closures properly. This
+means that the lexicals that are bound to the closure are dumped along
+with the subroutine that uses them. This makes it much easier to debug
+code that uses closures and to a certain extent provides a persistancy
+framework for closure based code. The way this works is that DDS figures
+out what all the lexicals are that are bound to CODE refs it is dumping
+and then pretends that it had originally been called with all of them as
 its arguements, (along with the original arguments as well of course.)
 
-One consequence of the way the dumping process works is that all of the 
-recreated subroutines will be in the same scope. This of course can lead 
-to collisions as two subroutines can easily be bound to different 
-variables that have the same name. 
+One consequence of the way the dumping process works is that all of the
+recreated subroutines will be in the same scope. This of course can lead
+to collisions as two subroutines can easily be bound to different
+variables that have the same name.
 
-The way that DDS resolves these collisions is that it renames one of the 
-variables with a special name so that presumably there are no collisions. 
-However this process is very simplistic with no checks to prevent 
-collisions with other lexicals or other globals that may be used by other 
-dumped code.  In some situations it may be necessary to change the default 
-value of the rename template which may be done by using the C<EclipseName> 
+The way that DDS resolves these collisions is that it renames one of the
+variables with a special name so that presumably there are no collisions.
+However this process is very simplistic with no checks to prevent
+collisions with other lexicals or other globals that may be used by other
+dumped code.  In some situations it may be necessary to change the default
+value of the rename template which may be done by using the C<EclipseName>
 method.
 
-Similarly to the problem of colliding lexicals is the problem of colliding 
-lexicals and globals. DDS pays no attention to globals when dumping 
-closures which can potentially result in lexicals being declared that will 
-eclipse their global namesake. There is currently no way around this other 
-than to avoid accessing a global and a lexical with the same name from the 
+Similarly to the problem of colliding lexicals is the problem of colliding
+lexicals and globals. DDS pays no attention to globals when dumping
+closures which can potentially result in lexicals being declared that will
+eclipse their global namesake. There is currently no way around this other
+than to avoid accessing a global and a lexical with the same name from the
 subs being dumped. An example is
 
-  my $a = sub { $a++ }; 
+  my $a = sub { $a++ };
   Dump( sub { $a->() } );
 
-which will not be dumped correctly. Generally speaking this kind of thing 
-is bad practice anyway, so this should probably be viewed as a "feature". 
+which will not be dumped correctly. Generally speaking this kind of thing
+is bad practice anyway, so this should probably be viewed as a "feature".
 :-)
 
-Generally if the closures being dumped avoid accessing lexicals and 
-globals with the same name from out of scope and that all of the CODE 
-being dumped avoids vars with the C<EclipseName> in their names the dumps 
+Generally if the closures being dumped avoid accessing lexicals and
+globals with the same name from out of scope and that all of the CODE
+being dumped avoids vars with the C<EclipseName> in their names the dumps
 should be valid and should eval back into existance properly.
 
-Note that the behaviour of dumping closures is subject to change in future 
-versions as its possible that I will put some additional effort into more 
+Note that the behaviour of dumping closures is subject to change in future
+versions as its possible that I will put some additional effort into more
 sophisiticated ways of avoiding name collisions in the dump.
 
-=head3 Controlling Hash Traversal and Display Order
+=head1 USAGE
 
-Data::Dump::Streamer supports a number of ways to control the traversal 
-order of hashes. This functionality is controlled via the SortKeys() and 
-HashKeys() accessor methods. SortKeys() is used to specify the generic 
-ordering of all hashes, and HashKeys() is for specifying the ordering for 
-a specific hashreference, or for all hashes of a given class. SortKeys() 
-takes only a single parameter, and HashKeys() takes a list of pairs. See 
-their documentation for more detail.
+While Data::Dump::Streamer is at heart an object oriented module, it is
+expected (based on experience with using L<Data::Dumper|Data::Dumper>)
+that the common case will not exploit these features. Nevertheless the
+method based approach is convenient and accordingly a compromise hybrid
+approach has been provided via the C<Dump()> subroutine. Such as
 
-By default the traversal of hashes is in B<C<'smart'>> order, which is 
-something like a dictionary order, and is suitable for mixed numeric and 
-text keys or for either. Two other standard orders are provided, 
-B<C<'alpha'>>-betical or B<C<'lex'>>-icographical and B<C<'num'>>-eric. 
-You may also specify that perls native ordering of the hash be used by 
-specifying false but defined, and have it fallback to a more general 
-ordering rule with B<C<undef>>.
+   Dump($foo);
+   $as_string= Dump($foo)->Out();
 
-In addition to these preprogrammed orderings you may also provide an 
-B<C<ARRAY>> ref containing a list of keys (and implicitly their order), or 
-a B<C<HASH>> ref used to determine which keys are displayed, and if they 
-are always shown (key=>1) or only shown if they exist (key=>0).
+All attribute methods are designed to be chained together.  This means
+that when used as set attribute (called with arguments) they return the
+object they were called against. When used as get attributes (called
+without arguments) they return the value of the attribute.
 
-For extremely fine tuning you can provide a B<C<CODE>> ref that will be 
-provided the hash reference being dumped and the pass on which it is being 
-dumped which is expected to return one of the above values. Thus you can 
-say:
+From an OO point of view the key methods are the C<Data()> and C<Out()>
+methods. These correspond to the breadth first and depth first traversal,
+and need to be called in this order. Some attributes I<must> be set prior
+to the C<Data()> phase and some need only be set before the C<Out()>
+phase.
 
-  ->SortKeys('lex') # use lex by default
-  ->HashKeys('Foo::Bar::Baz'=>sub{
-                  my $hash=shift;
-                  if ($hash == $special) {return [qw(a b c)]}
-                  elsif (UNIVERSAL::isa($hash,'Foo::Bar')) { return 'smart' }
-                  elsif (scalar keys %$hash>1000) { return 0 } # force each() use
-                  else {return undef} #fallback
-                })
+Attributes once set last the lifetime of the object, unless explicitly
+reset.
 
-And have it all work out as expected. (Well, that is if you really need to 
-apply such a crazy rule :-)
+=head2 Controlling Object Representation
 
-The order in which the rules are applied is:
+This module provides hooks to allow objects to override how they are
+represented. The basic idea is that a subroutine (or method) is provided
+which is responsible for the override. The return of the method governs
+how the object will be represented when dumped, and how it will be
+restored. The basic calling convention is
 
-  1. Object Specific via HashKeys() settings
-  2. Class Specifc via HashKeys() settings
-  3. Generic via SortKeys() settings
-  4. Use perls internal hash ordering.
+    my ( $proxy, $thaw, $postop )= $callback->($obj);
+    #or                          = $obj->$method();
 
-=head3 Controlling Array Presentation and Run Length Encoding
+The L<C<Freezer()>|/Freezer> method controls what methods to use as a default method
+and also allows per class overrides. When dumping an object of a given
+class the first time it tries to execute the class specific handler if
+it is specified, then the user specific generic handler if its been
+specified and then "DDS_freeze". This means that class authors can
+implement a C<DDS_freeze()> method and their objects will automatically
+be serialized as necessary. B<Note> that if either the class specific or
+generic handler is defined but false C<DDS_freeze()> will not be used
+even if it is present.
 
-By default Data::Dump::Streamer will "run length encode" array values. 
-This means that when an array value is simple (ie, its not referenced and 
-does contain a reference) and is repeated mutliple times the output will 
-be single a list multiplier statement, and not each item output 
-seperately. Thus: C<Dump([0,0,0,0])> will be output somthing like
+The interface of the L<C<Freezer()>|/Freezer> handler in detail is as follows:
+
+=over 4
+
+=item B<C<$obj>>
+
+The object being dumped.
+
+=item B<C<$proxy>>
+
+This is what will be dumped instead of C<$obj>. It may be one of
+the following values:
+
+=over 8
+
+=item I<C<undef>> (first time only)
+
+On the first time a serialization hook is called in a dump it may return
+undef or the empty list to indicate that it shouldn't be used again for
+this class during this pass. Any other time undef is treated the same
+as false.
+
+=item I<FALSE value>
+
+A false value for C<$proxy> is taken to mean that it should be ignored.
+Its like saying IgnoreClass(ref($obj)); B<Note> that undef has a special
+meaning when the callback is called the first time.
+
+=item I<A Reference>
+
+A reference that will be dumped instead of the object.
+
+=item I<Perl Code>
+
+A string that is to be treated as code and inserted directly into the
+dump stream as a proxy for the original. Note that the code must be
+able to execute inline or in other words must evaluate to a perl EXPR.
+Use C<do{}> to wrap multistatement code.
+
+=back
+
+=item B<C<$thaw>>
+
+This values is used to allow extra control over how the object will be
+recreated when dumped. It is used for converting the C<$proxy> representation
+into the real thing. It is only relevent when C<$proxy> is a reference.
+
+=over 8
+
+=item I<FALSE value>
+
+Indicates no thaw action is to be included for this object.
+
+=item I<Sub or Method Name>
+
+A string matching C<< /^(->)?((?:\w*::)\w+)(\(\))?$/ >> in which case it
+is taken as a sub name when the string ends in () and a method name
+when the string doesnt. If the C<< -> >> is present then the sub or method
+is called inline. If it is not then the sub or method is called
+after the main dump.
+
+=item I<Perl Code>
+
+Any other string, in which case the result will be taken as code
+which will be emitted after the main dump. It will be wrapped
+in a for loop that aliases C<$_> to the variable in question.
+
+=back
+
+=item B<C<$postdump>>
+
+This is the similar to C<$thaw> but is called in process instead
+of being emitted as part of the dump. Any return is ignored.
+It is only relevent when C<$proxy> is a reference.
+
+=over 8
+
+=item I<FALSE value>
+
+No postdump action is to occur.
+
+=item I<Code Reference>
+
+The code ref will be called after serialization is complete
+with the object as the argument.
+
+=item I<Method Name>
+
+The method will be called after serialization is complete
+
+=back
+
+=back
+
+An example DDS_freeze method is one I had to put together for an object
+which contained a key whose value was a ref to an array tied to the value
+of another key. Dumping this got crazy, so I wanted to surpress dumping
+the tied array. I did it this way:
+
+    sub DDS_freeze {
+        my $self=shift;
+        delete $self->{'tie'};
+        return ($self,'->fix_tie','fix_tie');
+    }
+
+    sub fix_tie {
+        my $self=shift;
+        if ( ! $self->{'tie'} ) {
+            $self->{str}="" unless defined $self->{str};
+            tie my @a, 'Tie::Array::PackedC', $self->{str};
+            $self->{'tie'} = \@a;
+        }
+        return $self;
+    }
+
+The C<$postop> means the object is relatively unaffected after the
+dump, the C<$thaw> says that we should also include the method
+inline as we dump. An example dump of an object like this might be
+
+   $Foo1=bless({ str=>'' },'Foo')->fix_tie();
+
+Wheras if we omit the C<< -> >> then we would get:
+
+    $Foo1=bless({ str=>'' },'Foo');
+    $Foo1->fix_tie();
+
+In our example it wouldn't actually make a difference, but the former
+style can be nicer to read if the object is embedded in another.
+However the non arrow notation is slightly more dangerous, in that
+its possible that the internals of the object will not be fully linked
+when the method is evaluated. The second form guarantees that the object
+will be fully linked when the method is evaluated.
+
+See L<Controlling Hash Traversal and Display Order> for a different way
+to control the representation of hash based objects.
+
+=head2 Controlling Hash Traversal and Display Order
+
+When dumping a hash you may control the order the keys will be output
+and which keys will be included. The basic idea is to specify a subroutine
+which takes a hash as an argument and returns a reference to an array
+containing the keys to be dumped.
+
+You can use the L<KeyOrder()|/KeyOrder TYPE_OR_OBJ> routine or the L<SortKeys()|/SortKeys> routine to
+specify the sorter to be used.
+
+The routine will be called in the following way:
+
+   ( $key_array, $thaw ) = $sorter->($hash,($pass=0),$addr,$class);
+   ( $key_array,)        = $sorter->($hash,($pass=1),$addr,$class);
+
+C<$hash> is the hash to be dumped, C<$addr> is the refaddr() of the
+C<$hash>, and C<$class> will be set if the hash has been blessed.
+
+When C<$pass> is 0 the C<$thaw> variable may be supplied as well as the
+keyorder. If it is defined then it specifies what thaw action to perform
+after dumping the hash. See L<C<$thaw>|/$thaw> in L<Controlling Object
+Representation> for details as to how it works.  This allows an object
+to define those keys needed to recreate itself properly, and a followup
+hook to recreate the rest.
+
+B<Note> that if a L<Freezer()|/Freezer> method is defined and returns
+a L<C<$thaw>|/$thaw> then the L<C<$thaw>|/$thaw> returned by the sorter
+will override it.
+
+=head2 Controlling Array Presentation and Run Length Encoding
+
+By default Data::Dump::Streamer will "run length encode" array values.
+This means that when an array value is simple (ie, its not referenced and
+does contain a reference) and is repeated mutliple times the output will
+be single a list multiplier statement, and not each item output
+seperately. Thus: L<C<Dump([0,0,0,0])>|/Dump> will be output somthing like
 
    $ARRAY1 = [ (0) x 4 ];
 
-This is particularly useful when dealing with large arrays that are only 
-partly filled, and when accidentally the array has been made very large, 
+This is particularly useful when dealing with large arrays that are only
+partly filled, and when accidentally the array has been made very large,
 such as with the improper use of pseudo-hash notation.
 
-To disable this feature you may set the Rle() property to FALSE, by 
+To disable this feature you may set the L<Rle()|/Rle> property to FALSE, by
 default it is enabled and set to TRUE.
-
-=head3 Controlling Object Representation (Freeze/Thaw)
-
-This module provides hooks for specially handling objects. Freeze/Thaw for 
-generic handling, and FreezeClass/ThawClass for class specific handling. 
-These hooks work as follows (and it should be understood that Freeze() 
-below refers to both it and FreezeClass as does Thaw() refer to 
-ThawClass() as well.
-
-If a Freeze() hook is specified, then it is called on the object during 
-the Data() phase prior to traversing the object. The freeze hook may 
-perform whatever duties it needs and change its internal structure, _or_ 
-it may alter $_[0] providing a substitute reference to be dumped instead 
-(note that this will not alter the data structure being dumped). This 
-reference may even be a totally different type!
-
-If a Thaw() hook is specified then as part of the dump code it will be 
-included to rebless the reference and then call the hook on the newly 
-created object. If the code was originally frozen (not replaced) the 
-method will be called on the object to unfreeze it during the Out() phase 
-of the dump, leaving the structure unmodified after the dump.  If the 
-object was replaced by the freeze hook this doesn't occur as it is assumed 
-the data structure has not changed.  A special rule applies to Thaw() 
-hooks in that if they include the prefix "->" then they are not executed 
-inline, and as such expected to return the object, but as an independent 
-statement after the object hash been created created, and the return of 
-the statement is ignored. Thus a method that simply changes the internal 
-state of the object but doesn't return an object reference may be used as 
-a Thaw() handler.
-
-For now these options are specified as string values representing the 
-method names. Its possible a later version will extend this to also handle 
-codrefs.
-
-B<Note> that the Freeze/Thaw methods will NOT be executed on objects that 
-don't support those methods. The setting in this case will be silently 
-ignored.
 
 =head2 Installing I<DDS> as a package alias
 
-Its possible to have an alias to Data::Dump::Streamer created and 
-installed for easier useage in one liners and short scripts. 
-Data::Dump::Streamer is a bit long to type sometimes. However because this 
-technically means polluting the root level namespace, and having it listed 
-on CPAN, I have elected to have the installer not install it by default. 
-If you wish it to be installed you must explicitly state so when 
+Its possible to have an alias to Data::Dump::Streamer created and
+installed for easier useage in one liners and short scripts.
+Data::Dump::Streamer is a bit long to type sometimes. However because this
+technically means polluting the root level namespace, and having it listed
+on CPAN, I have elected to have the installer not install it by default.
+If you wish it to be installed you must explicitly state so when
 Makefile.Pl is run:
 
   perl Makefile.Pl DDS [Other MakeMaker options]
@@ -454,8 +580,8 @@ Using DDS is identical to Data::Dump::Streamer.
 
 =head2 use-time package aliasing
 
-You can also specify an alias at use-time, then use that alias in the rest 
-of your program, thus avoiding the permanent (but modest) namespace 
+You can also specify an alias at use-time, then use that alias in the rest
+of your program, thus avoiding the permanent (but modest) namespace
 pollution of the previous method.
 
   use Data::Dumper::Streamer as => 'DDS';
@@ -464,16 +590,17 @@ pollution of the previous method.
   use Data::Dumper::Streamer;
   import Data::Dumper::Streamer as => 'DDS';
 
-You can use any alias you like, but that doesnt mean you should.. Folks 
+You can use any alias you like, but that doesn't mean you should.. Folks
 doing as => 'DBI' will be mercilessly ridiculed.
 
+=head1 INTERFACE
 
 =head2 Data::Dumper Compatibility
 
-For drop in compatibility with the Dumper() usage of Data::Dumper, you may 
-request that the L<Dumper> method is exported. It will not be exported by 
-default. In addition the standard Data::Dumper::Dumper() may be exported 
-on request as 'DDumper'. If you provide the tag ':Dumper' then both will 
+For drop in compatibility with the Dumper() usage of Data::Dumper, you may
+request that the L<Dumper()|/Dumper> method is exported. It will not be exported by
+default. In addition the standard Data::Dumper::Dumper() may be exported
+on request as C<DDumper>. If you provide the tag C<:Dumper> then both will
 be exported.
 
 =over 4
@@ -492,7 +619,7 @@ L<Data::Dumper|Data::Dumper>
 A secondary export of the actual L<Data::Dumper::Dumper|Data::Dumper>
 subroutine.
 
-=back 4
+=back
 
 =head2 Constructors
 
@@ -517,18 +644,16 @@ sub new {
             indent       => 2,    # should we indent at all?
             indentkeys   => 1,         # indent keys
             declare      => 0,         # predeclare vars? allows refs to root vars if 0
-            sortkeys     => 'smart',   # sort ordering, smart, alpha, numeric, or subref
-            hashkeys     => undef,
+            sortkeys     => {},
             verbose      => 1,         # use long names and detailed fill ins
             dumpglob     => 1,         # dump glob contents
             deparseglob  => 1,
             deparse      => 1,         # deparse code refs?
-            freeze       => '',        # default freezer
-            thaw         => '',        # default thaw
-            freezeclass  => {},        # freeze classes
-            thawclass    => {},        # thaw classes
+            freezer      => 'DDS_freeze',        # default freezer
+            freeze_class  => {},        # freeze classes
+
             rle          => 1,         # run length encode arrays
-            ignoreclass  => {},        # ignore classes
+            ignore       => {},        # ignore classes
             indentcols   => 2,         # indent this numbe of cols
             ro           => 1,         # track readonly vars
             dualvars     => 1,         # dump dualvars
@@ -598,39 +723,47 @@ BEGIN {
     # put a string value in double quotes
     # Fixes by [ysth]
     sub _qquote {
-        local ($_) = shift;
-        s/([\\\"\@\$])/\\$1/g;
+        my $str = shift;
+        my @ret;
+        while (length($str)) {
+            local($_)=substr($str,0,72,"");
+            s/([\\\"\@\$])/\\$1/g;
 
-        return qq("$_") # fast exit
-          unless /[^ !"\#\$%&'()*+,\-.\/0-9:;<=>?\@A-Z[\\\]^_`a-z{|}~]/;
-
-        s/([\a\b\t\n\f\r\e])/$esc{$1}/g;
-
-        if ( ord('^') == 94 ) {
-            # ascii / utf8
-            # no need for 3 digits in escape if followed by a digit
-            s/([\0-\037])(?!\d) / sprintf '\\%o',    ord($1)/xeg;
-            s/([\0-\037\177])   / sprintf '\\%03o',  ord($1)/xeg;
-
-            if (length $_ != do { use bytes; length $_ }) {
-                use utf8; #perl 5.6.1 needs this, 5.9.2 doesnt. sigh
-                s/([\200-\377]) / sprintf '\\%03o',  ord($1)/xeg;
-                s/([^\040-\176])/ sprintf '\\x{%x}', ord($1)/xeg;
-            } else {
-                # must not be under "use utf8" for 5.6.x
-                s/([\200-\377]) / sprintf '\\%03o',  ord($1)/xeg;
+            unless (/[^ !""\#\$%&''()*+,\-.\/0-9:;<=>?\@A-Z[\\\]^_`a-z{|}~]/) {
+                push @ret,qq("$_"); # fast exit
+                next;
             }
-        } else {
-            # ebcdic
-            s{([^ !"\#\$%&'()*+,\-.\/0-9:;<=>?\@A-Z[\\\]^_`a-z{|}~])(?!\d)}
-             {
-                my $v = ord($1); '\\'.sprintf(($v <= 037 ? '%o' : '%03o'), $v)
-             }eg;
-            s{([^ !"\#\$%&'()*+,\-.\/0-9:;<=>?\@A-Z[\\\]^_`a-z{|}~])}
-               {'\\'.sprintf('%03o',ord($1))}eg;
-        }
 
-        return qq("$_");
+
+            s/([\a\b\t\n\f\r\e])/$esc{$1}/g;
+
+            if ( ord('^') == 94 ) {
+                # ascii / utf8
+                # no need for 3 digits in escape if followed by a digit
+                s/([\0-\037])(?!\d) / sprintf '\\%o',    ord($1)/xeg;
+                s/([\0-\037\177])   / sprintf '\\%03o',  ord($1)/xeg;
+
+                if (length $_ != do { use bytes; length $_ }) {
+                    use utf8; #perl 5.6.1 needs this, 5.9.2 doesnt. sigh
+                    s/([\200-\377]) / sprintf '\\%03o',  ord($1)/xeg;
+                    s/([^\040-\176])/ sprintf '\\x{%x}', ord($1)/xeg;
+                } else {
+                    # must not be under "use utf8" for 5.6.x
+                    s/([\200-\377]) / sprintf '\\%03o',  ord($1)/xeg;
+                }
+            } else {
+                # ebcdic
+                s{([^ !""\#\$%&''()*+,\-.\/0-9:;<=>?\@A-Z[\\\]^_`a-z{|}~])(?!\d)}
+                 {
+                    my $v = ord($1); '\\'.sprintf(($v <= 037 ? '%o' : '%03o'), $v)
+                 }eg;
+                s{([^ !""\#\$%&''()*+,\-.\/0-9:;<=>?\@A-Z[\\\]^_`a-z{|}~])}
+                   {'\\'.sprintf('%03o',ord($1))}eg;
+            }
+
+            push @ret,qq("$_");
+        }
+        return join ".\n\t",@ret;
     }
 
 
@@ -671,9 +804,10 @@ my %ttrans = (
 
 sub _make_name {
     my ( $self, $obj, $indx ) = @_;
-    #warn Dumper($self->{unames})."'$self->{unames}' 
+    #warn Dumper($self->{unames})."'$self->{unames}'
     # : @{$self->{unames}||[]} @{[defined $indx ? $indx : '-']}";
     my $uname = ( $self->{unames} || [] )->[ $indx || 0 ];
+
     unless ($uname) {
         my $name = blessed($_[1])
                   || reftype($_[1])
@@ -689,15 +823,15 @@ sub _make_name {
             }
             if ($n<=length($abr)) {
                 $self->{type_abrv}{substr($abr,0,$n)}=$name;
-                return '$' . 
-                       substr($abr,0,$n) . 
+                return '$' .
+                       substr($abr,0,$n) .
                        ( ++$self->{type_ids}{$name} );
             }
         }
         $name =~ s/::/_/g;
         ($name)=$name=~/(\w+)/; #take the first word;
         return '$' . $name . ( ++$self->{type_ids}{$name} );
-    } elsif ( $uname =~ /^\*/ ) {
+    } elsif ( $uname =~ /^[-*]/ ) {
         my $type = reftype( $_[1] ) || '';
         $uname =~ s//$ttrans{$type}/;
         $uname;
@@ -796,7 +930,7 @@ sub _build_name {
 sub _reset {
     my $self=shift;
     foreach my $key (keys %$self) {
-        next unless $key=~/^(sv|ref|fix|cat|type|names|reqs)/;
+        next unless $key=~/^(sv|ref|fix|cat|type|names|reqs|cache)/;
         delete $self->{$key};
     }
     $self->{sv_id}=$self->{ref_id}=0;
@@ -813,10 +947,10 @@ sub diag_sv_idx {
         ($self->{special}{$idx} ? '*' : ' '),$idx,
         (map { $self->{$_}[$idx] } qw( sva svc svt svd )),
         ($self->{svro}[$idx] ? 'RO ' : 'RW'),
-        (!$self->{svdu}[$idx] 
-          ? '-' 
-          : defined ${$self->{svdu}[$idx]} 
-            ? ${$self->{svdu}[$idx]} 
+        (!$self->{svdu}[$idx]
+          ? '-'
+          : defined ${$self->{svdu}[$idx]}
+            ? ${$self->{svdu}[$idx]}
             : '?'),
         $self->{svn}[$idx],
         (defined $self->{unames}[$idx-1] ? "($self->{unames}[$idx-1])" : ""),
@@ -835,13 +969,13 @@ sub diag_ref_idx {
     my $oidx=$self->{sv}{$self->{refa}[$idx]};
     sprintf "R %2d : %#x(c%2d|%2d) Dp:%2d    Du:%s => %s %s\n",
         $idx,
-        (map { 
+        (map {
             defined $self->{$_}[$idx] ?  $self->{$_}[$idx] : -1
          } qw(refa refc reft refd )),
-        (!$self->{refdu}[$idx] 
-         ? '-' 
-         : defined ${$self->{refdu}[$idx]} 
-           ? ${$self->{refdu}[$idx]} 
+        (!$self->{refdu}[$idx]
+         ? '-'
+         : defined ${$self->{refdu}[$idx]}
+           ? ${$self->{refdu}[$idx]}
            : '?'),
         $self->{refn}[$idx],
         (($oidx) ? " < $self->{svn}[$oidx] >" : "")
@@ -855,7 +989,7 @@ sub diag_ref_idx {
 
 Smart non method based constructor.
 
-This routine behaves very differently depending on the context it is 
+This routine behaves very differently depending on the context it is
 called in and whether arguments are provided.
 
 If called with no arguments it is exactly equivelent to calling
@@ -868,19 +1002,19 @@ If called with arguments and in scalar context it is equivelent to calling
 
   Data::Dump::Streamer->new()->Data(@vals)
 
-except that the actual depth first traversal is I<delayed> until C<Out()> 
-is called.  This means that options that must be provided before the 
-C<Data()> phase can be provided after the call to C<Dump()>.  Again, it 
+except that the actual depth first traversal is I<delayed> until C<Out()>
+is called.  This means that options that must be provided before the
+C<Data()> phase can be provided after the call to C<Dump()>.  Again, it
 returns a object reference.
 
-If called with arguments and in void or list context it is equivelent to 
+If called with arguments and in void or list context it is equivelent to
 calling
 
   Data::Dump::Streamer->new()->Data(@vals)->Out()
 
-The reason this is true in list context is to make 
-C<print Dump(...),"\n";> do the right thing. And also that combined with 
-method chaining options can be added or removed as required quite easily 
+The reason this is true in list context is to make
+C<print Dump(...),"\n";> do the right thing. And also that combined with
+method chaining options can be added or removed as required quite easily
 and naturally.
 
 So to put it short:
@@ -892,7 +1026,7 @@ So to put it short:
   Dump($x,$y);                 # prints the dump.
   print Dump($x,$y);           # prints the dump.
 
-It should be noted that the setting of C<$\> will affect the behaviour of 
+It should be noted that the setting of C<$\> will affect the behaviour of
 both of
 
   Dump($x,$y);
@@ -902,12 +1036,12 @@ but it will not affect the behaviour of
 
   print scalar Dump($x,$y);
 
-B<Note> As of 1.11 Dump also works as a method, with identical properties 
-as when called as a subroutine, with the exception that when called with 
+B<Note> As of 1.11 Dump also works as a method, with identical properties
+as when called as a subroutine, with the exception that when called with
 no arguments it is a synonym for C<Out()>. Thus
 
   $obj->Dump($foo)->Names('foo')->Out();
-  
+
 will work fine, as will the odd looking:
 
   $obj->Dump($foo)->Names('foo')->Dump();
@@ -915,8 +1049,8 @@ will work fine, as will the odd looking:
 which are both the same as
 
   $obj->Names('foo')->Data($foo)->Out();
-  
-Hopefully this should make method use more or less DWIM.  
+
+Hopefully this should make method use more or less DWIM.
 
 =cut
 
@@ -924,7 +1058,7 @@ my %args_insideout;
 
 sub DESTROY {
     my $self=shift;
-    delete $args_insideout{$self} if $self;
+    delete $args_insideout{Data::Dump::Streamer::refaddr $self} if $self;
 }
 
 sub Dump {
@@ -935,7 +1069,7 @@ sub Dump {
     if (@_) {
         if ( defined wantarray and !wantarray ) {
             $obj ||= __PACKAGE__->new();
-            $args_insideout{$obj}= $obj->_make_args(@_);
+            $obj->_make_args(@_);
             return $obj;
         } else {
             $obj||=__PACKAGE__;
@@ -947,6 +1081,61 @@ sub Dump {
         } else {
             return __PACKAGE__->new();
         }
+    }
+}
+
+sub DumpLex {
+    my $obj;
+    if ( blessed($_[0]) and blessed($_[0]) eq __PACKAGE__ ) {
+        $obj=shift;
+    }
+    my $pad = peek_my(1);
+    my %pad_vars;
+    while (my ($var,$ref) = each %$pad) {
+        $pad_vars{ refaddr $ref } = $var;
+    }
+    my @names;
+    my $varcount = 1;
+
+    foreach (@_) {
+        my $name;
+        INNER:foreach ( \$_, $_ ) {
+            $name=$pad_vars{refaddr $_}
+                and last INNER;
+        }
+        push @names, $name;
+    }
+    if ( defined wantarray and !wantarray ) {
+        $obj ||= __PACKAGE__->new();
+        $obj->_make_args(@_);
+        $obj->Names(@names);
+        return $obj;
+    } else {
+        $obj||=__PACKAGE__;
+        return $obj->Data(@_)->Names(@names)->Out();
+    }
+}
+
+sub DumpNames {
+    my $obj;
+    if ( blessed($_[0]) and blessed($_[0]) eq __PACKAGE__ ) {
+        $obj=shift;
+    }
+    my @names;
+    my @args;
+    for ( 0 .. $#_/2 ) {
+        $names[$_]=$_[$_*2];
+        $args[$_]=$_*2+1;
+    }
+    #die "@_:@names|@args";
+    if ( defined wantarray and !wantarray ) {
+        $obj ||= __PACKAGE__->new();
+        $obj->_make_args(@_[@args]);
+        $obj->Names(@names);
+        return $obj;
+    } else {
+        $obj||=__PACKAGE__;
+        return $obj->Data(@_[@args])->Names(@names)->Out();
     }
 }
 
@@ -984,7 +1173,7 @@ sub _reg_scalar {
         $self->{sva}[$idx]=$addr;
         $self->{svro}[$idx]=$ro;
         $self->{svc}[$idx]=$cnt;
-        $self->{svw}{$addr}=!0 
+        $self->{svw}{$addr}=!0
             if isweak($_[1]);
         ($self->{svn}[$idx]=$name)=~s/^[\@\%\&]/\$/;
         if ($self->{svn}[$idx] ne $name) {
@@ -1012,9 +1201,10 @@ sub _reg_scalar {
 
 *Precise=\&Dump;
 
+# we make an array of hashes containing useful info about the arguments
 sub _make_args {
     my $self=shift;
-            [
+    $args_insideout{refaddr $self}= [
                 map {
                         {
                                 item   => \$_[$_],
@@ -1023,9 +1213,10 @@ sub _make_args {
                         }
                     } 0..$#_
             ];
+    return $args_insideout{refaddr $self}
 }
 
-=back 4
+=back
 
 =head2 Methods
 
@@ -1083,13 +1274,14 @@ sub Data {
         if $DEBUG;
     if (@_) {
         $self->_reset;
-        $args_insideout{$self}=$self->_make_args(@_);
-    } elsif ($self->{cataloged}) {
+        $self->_make_args(@_);
+    } elsif ( $self->{cataloged} ) {
         $self->_reset;
     }
-    $args=$args_insideout{$self} || Carp::confess "No arguments!";
+    $args= $args_insideout{refaddr $self}
+        || Carp::carp "No arguments!";
     my $pass=1;
-PASS:{    
+PASS:{
         my @queue;
         my $idx=0;
         foreach my $arg (@$args) {
@@ -1105,16 +1297,16 @@ PASS:{
             );
             $arg->{name}=$name;
             if (my $type=reftype_or_glob ${ $arg->{item} }) {
-                $self->_add_queue(\@queue, $type, ${ $arg->{item} }, 2, 
+                $self->_add_queue(\@queue, $type, ${ $arg->{item} }, 2,
                    $name, refcount ${ $arg->{item} },$arg)
             }
         }
-        
+
         my %lex_addr;
         my %lex_addr2name;
         my %lex_name;
         my %lex_special;
-        
+
         while (@queue) {
             # If the scalar (container) is of any interest it is
             # already registered by the time we see it here.
@@ -1122,72 +1314,114 @@ PASS:{
             # container.
             print Data::Dumper->new([\@queue],['*queue'])->Maxdepth(3)->Dump
                 if $DEBUG>=10;
-    
+
             my ($ritem,
                 $cdepth,
                 $cname,
                 $rcnt,
                 $arg)=@{shift @queue};
-                
-            
-    
+
+
+
             my ($frozen,$item,$raddr,$class);
             DEQUEUE:{
                 $item=$$ritem;
                 $raddr=refaddr($item);
                 $class=blessed($item);
-    
+
                 $DEBUG and
                 print "Q-> $item $cdepth $cname $rcnt ($raddr)\n";
-    
+
                 unless ($raddr) {
                     $DEBUG and
                     print "  Skipping '$cname' as it isn't a reference.\n";
                     next;
                 }
-    
-                if ($class and !$frozen) {
-                    if ($self->{style}{ignoreclass}{$class}) {
-                        $DEBUG and
-                        print "Ignoring '$cname' as its class ($class) in ".
-                              "our ignore list.\n";
-                        next;
-                    } elsif (
-                      my $meth = $self->{style}{freezeclass}{$class}
-                              || $self->{style}{freeze}
-                    ){
-                        if (${$ritem}->can($meth)) {
-                            ${$ritem}->$meth();
-                            unless (refaddr($$ritem)==$raddr) {
-                                $self->{ref_fz}{$raddr}=$$ritem;
+
+                last DEQUEUE if $frozen;
+                $frozen=1;
+                if ($self->{style}{ignore}{"#$raddr"} || ($class&& $self->{style}{ignore}{".$class"})) {
+                    $DEBUG and
+                    print "Ignoring '$cname' as its class ($class) in ".
+                          "our ignore list.\n";
+                    next;
+                } elsif ($class && !$self->{"cache_skip_freeze"}{$class}) {
+                    my $freezer= $self->{cache_freeze_class}{$class};
+                    my ( $proxy, $thaw, $postop );
+                    if (! defined $freezer ) {
+                        for ( $self->{style}{freeze_class}{$class},
+                              $self->{style}{freezer},
+                              'DDS_freeze' )
+                        {
+                            $freezer= $_;
+                            if ( $freezer ) {
+                                if (ref $freezer) {
+                                    eval {
+                                        ($proxy,$thaw,$postop)= $freezer->($$ritem);
+                                    };
+                                    last if !$@;
+                                } elsif ( $class->can($freezer) ) {
+                                    eval {
+                                        ($proxy,$thaw,$postop)= ${$ritem}->$freezer();
+                                    };
+                                    last if !$@;
+                                }
+                            } elsif ( defined $freezer ) {
+                                last;
                             }
-                            $frozen=1;
+                        }
+                        if (! defined $proxy) {
+                            $self->{"cache_skip_freeze"}{$class}=1;
+                        } else {
+                            $self->{cache_freeze_class}{$class}= $freezer;
+                        }
+
+                    } elsif (ref $freezer) {
+                        ($proxy,$thaw)= $freezer->($$ritem);
+                    } else {
+                        ($proxy,$thaw)= ${$ritem}->$freezer();
+                    }
+                    if ( $thaw ) {
+                        $self->{ref_thaw}{$raddr}= $thaw;
+                    }
+                    if ( $postop ) {
+                        $self->{ref_postop}{$raddr}= $postop;
+                    }
+                    if ( refaddr($proxy) != $raddr ) {
+                        $self->{ref_fz}{$raddr}= $proxy;
+                        $ritem= \$proxy;
+                        if (ref $proxy) {
                             redo DEQUEUE;
+                        } else {
+                            next;
                         }
                     }
                 }
+
             }
-    
+
             my ($idx,$dupe)=$self->_reg_ref($item,$cdepth,$cname,$rcnt,$arg);
             $DEBUG and print "  Skipping '$cname' as it is a dupe of ".
                              "$self->{refn}[$idx]\n"
                 if $dupe;
             $DEBUG>9 and $self->diag;
             next if $dupe;
-    
-    
+
+
             my $reftype=reftype $item;
             my $cnt=refcount($item);
             my $overloaded=undef;
+            my $isoverloaded=0;
             if (defined $class and overload::Overloaded($item)) {
                 bless $item, 'Does::Not::Exist';
-                $overloaded=$class;
+                $overloaded= $class;
+                $isoverloaded= 1;
             }
-            
-    
-            if ( $reftype eq 'SCALAR' or 
-                 $reftype eq 'REF' or 
-                 $reftype eq 'GLOB' ) 
+
+
+            if ( $reftype eq 'SCALAR' or
+                 $reftype eq 'REF' or
+                 $reftype eq 'GLOB' )
             {
                 my $name=$self->_build_name($cname,'$');
                 my $cnt=sv_refcount($$item);
@@ -1199,7 +1433,7 @@ PASS:{
                     $self->_add_queue(\@queue,$type,$$item,
                        $cdepth+2,$name,$cnt)
                 }
-    
+
             } elsif ($reftype eq 'ARRAY') {
                 foreach my $idx (0..$#$item) {
                     my $name=$self->_build_name($cname,'[',$idx);
@@ -1217,13 +1451,18 @@ PASS:{
                 }
             } elsif ($reftype eq 'HASH') {
                 my $ik=$self->{style}{indentkeys};
-                my $keys=$self->_get_keys($item,$raddr,$class,0);
+                my ($keyary, $thaw)= $self->_get_keys($item,0,$raddr,$class);
+                if ($thaw) {
+                    $self->{ref_thaw}{$raddr}= $thaw;
+                }
                 my $key_len=0;
                 my $key_sum=0;
                 my $key_count=0;
-                while ( defined( my $key = 
-                  defined $keys ? $keys->[$key_count] : each %$item
-                )) 
+                die reftype $keyary if $keyary && reftype($keyary) ne 'ARRAY';
+
+                while ( defined( my $key =
+                  defined $keyary ? $keyary->[$key_count] : each %$item
+                ))
                {
                     if ($ik) {
                         my $qk=_quotekey($key);
@@ -1243,23 +1482,28 @@ PASS:{
                     }
                 }
                 my $avg=$key_count>0 ? $key_sum/$key_count : 0;
-                $self->{ref_hklen}{$raddr}=($key_len>8 && (2/3*$key_len)>$avg) 
+                $self->{ref_hklen}{$raddr}=($key_len>8 && (2/3*$key_len)>$avg)
                                            ? int(0.5+$avg) : $key_len;
                 $self->{ref_hkcnt}{$raddr}=$key_count;
                 #warn "$raddr => $key_count";
-    
+
             } elsif ($reftype eq 'CODE') {
                 if ($pass == 1) {
+
                     my $used=get_lexicals($item);
+                    #my ($used,$targs)= closed_over($item);
+
                     foreach my $name (keys %$used) {
+
                         next unless $name=~/\D/;
+
                         my $addr=refaddr($used->{$name});
                         if ( !$lex_addr{$addr} ) {
                             $lex_addr{$addr}=$used->{$name};
                             if ( $lex_name{$name} ) {
                                 my $tmpname=sprintf "%s".$self->{style}{eclipsename},
                                              substr($name,0,1),
-                                             $self->{style}{eclipsename}=~/^[^%]*%s/ 
+                                             $self->{style}{eclipsename}=~/^[^%]*%s/
                                               ? ( substr($name,1),
                                                   ++$lex_special{$name}, )
                                               : ( ++$lex_special{$name},
@@ -1278,22 +1522,23 @@ PASS:{
                     }
                 }
             } elsif ($reftype eq 'FORMAT') {
-                # nothing
+                # Code similar to that of CODE should go here I think.
             } else {
                 # IO?
                 Carp::confess "Data() can't handle '$reftype' objects yet\n :-(\n";
             }
-            bless $item,$overloaded if defined $overloaded;
-    
+            if ($isoverloaded) {
+                $item= bless $item, $overloaded;
+            }
         }
         if ( $pass++ == 1 ) {
-            
+
             my %items;
-            for my $idx ( 0..$#{$args_insideout{$self}} ) {
-                my $item=$args_insideout{$self}[$idx];
+            for my $idx ( 0..$#{$args_insideout{refaddr $self}} ) {
+                my $item=$args_insideout{refaddr $self}[$idx];
                 $items{ refaddr $item->{item} } = $idx;
             }
-            
+
             my @add;
             my $added=0;
             if (0) {
@@ -1313,7 +1558,7 @@ PASS:{
                             $new=~s/^(\*)?/substr($old,0,1)/e;
                             delete $lex_name{$lex_addr2name{$addr}};
                             $lex_addr2name{$addr}=$new;
-                            $lex_name{$self->{unames}[$idx]} = $addr;  # xxx 
+                            $lex_name{$self->{unames}[$idx]} = $addr;  # xxx
                         }
                     } else {
                         push @add,$addr;
@@ -1326,10 +1571,10 @@ PASS:{
                                a2n => \%lex_addr2name,
                                name => \%lex_name
                               };
-            
+
             if (@add) {
-                unshift @{$args_insideout{$self}},
-                        map {
+                unshift @{$args_insideout{refaddr $self}},
+                   map {
                             my $rt=reftype($lex_addr{$_});
                             my $item;
                             if ($rt ne 'SCALAR' and $rt ne 'GLOB' and $rt ne 'REF') {
@@ -1346,10 +1591,10 @@ PASS:{
                         } @add;
                 $self->{lexicals}{added}={ map { $lex_addr2name{$_} => 1 } @add };
                 unshift @{$self->{unames}},
-                    map { 
-                            (my $n=$lex_addr2name{$_})=~s/^[^\$]/*/; 
-                            $n=~s/^\$//; 
-                            $n 
+                    map {
+                            (my $n=$lex_addr2name{$_})=~s/^[^\$]/*/;
+                            $n=~s/^\$//;
+                            $n
                         } @add;
                 $self->_reset;
                 redo PASS;
@@ -1358,7 +1603,7 @@ PASS:{
                 redo PASS;
             }
         }
-    }    
+    }
     $self->{cataloged}=1;
     return $self;
 }
@@ -1369,10 +1614,9 @@ sub _add_fix {
     # TODO
     # add a fix statement to the list of fixes.
     my $fix=@args==1 ? shift @args : [@args];
-    unless ($fix->[0]=~/^(var|glob|method call|ref|sv|#|sub call|lock|bless)$/) {
+    unless ($fix->[0]=~/^(var|glob|thaw|ref|sv|#|sub call|lock|bless)$/) {
         Carp::confess "Unknown variant:".Dumper($fix);
     }
-
     if ($args[0] eq 'var') {
         unshift @{$self->{fix}},$fix;
     }   else {
@@ -1443,7 +1687,7 @@ sub _dump_apply_fix { #handle fix statements and GLOB's here.
                         if ($rhs=~/^[\@\%\&]/) {
                             $rhs="\\".$rhs;
                             $rhs="bless( $rhs, "._quote($class).' )'
-                                if $class;                            
+                                if $class;
                         } # Warn if
                         $self->{fh}->print("$lhs = $rhs;\n");
                         $keep=0
@@ -1457,12 +1701,26 @@ sub _dump_apply_fix { #handle fix statements and GLOB's here.
                                         ");\n");
                         $keep=0;
                     }
-                } elsif ($type eq 'method call') {
-                    if ($self->{refdu}[$lhs] and ${$self->{"refdu"}[$lhs]}) {
-                        $lhs=$self->{"refn"}[$lhs];
-                        my @args=@$_[3..$#$_];
-                        $self->{fh}->print("$lhs->$rhs(".join(", ",@args).");\n");
-                        $keep=0
+                } elsif ($type eq 'thaw') {
+                    # these have to happen at the end.
+                    if ($isfinal) {
+                        if ($self->{refdu}[$lhs] and ${$self->{"refdu"}[$lhs]}) {
+                            $lhs=$self->{"refn"}[$lhs];
+                            my @args=@$_[3..$#$_];
+                            if ($rhs=~/^(->)?((?:\w*::)*\w+)(\(\))?$/) {
+                                if ($3) {
+                                    $self->{fh}->print("$2( ".join(", ",$lhs,@args)." );\n");
+                                } else {
+                                    $self->{fh}->print("$lhs->$2(".join(", ",@args).");\n");
+                                }
+                            } else {
+                                $rhs=~s/^\t//mg;
+                                $self->{fh}->print("for ($lhs) {\n$rhs\n}\n");
+                            }
+                            $keep=0;
+                        } else {
+                            die "Bad mojo!";
+                        }
                     }
                 } elsif ($type eq 'glob') {
                     push @globs,$_;
@@ -1481,7 +1739,7 @@ sub _dump_apply_fix { #handle fix statements and GLOB's here.
                         $keep=0;
                     }
                 } else {
-                    die Dumper($fix);
+                    die "Bad fix: ",Dumper($fix);
                 }
 
             }
@@ -1493,22 +1751,24 @@ sub _dump_apply_fix { #handle fix statements and GLOB's here.
             local @_;
             $name=$name ? '*'.$name : $rhs;
             my $overloaded=undef;
+            my $isoverloaded=0;
             if (defined( blessed $lhs ) and
-                overload::Overloaded( $lhs ) ) 
+                overload::Overloaded( $lhs ) )
             {
                 $overloaded=blessed $lhs;
                 bless $lhs,"Does::Not::Exist";
+                $isoverloaded=1;
             }
             foreach my $t ($self->_glob_slots(''))
             {
                 my $v=*$lhs{$t};
-                
+
                 if ( not(defined $v) or
-                    ($t eq 'SCALAR' and !defined($$v))) 
+                    ($t eq 'SCALAR' and !defined($$v)))
                 {
                     next;
                 }
-                            
+
 
                 my $dumped=0;
 
@@ -1529,7 +1789,7 @@ sub _dump_apply_fix { #handle fix statements and GLOB's here.
                 $self->{fh}->print(";\n");
                 $dumped=1;
             }
-            
+
             if ($self->{style}{deparse} && $self->{style}{deparseglob}
                 #and defined *$lhs{FORMAT}
             ) {
@@ -1550,9 +1810,11 @@ sub _dump_apply_fix { #handle fix statements and GLOB's here.
                     $self->{fh}->print("\n");
                 }
             }
-            bless $lhs,$overloaded 
-                    if defined $overloaded;
-            
+            if ($isoverloaded) {
+                $lhs=bless $lhs,$overloaded;
+            }
+
+
         }
         redo GLOB if @globs;
     }
@@ -1562,20 +1824,20 @@ sub _dump_apply_fix { #handle fix statements and GLOB's here.
 
 =item Out VALUES
 
-Prints out a set of values to the appropriate location. If provided a list 
-of values then the values are first scanned with C<Data()> and then 
-printed, if called with no values then whatever was scanned last with 
+Prints out a set of values to the appropriate location. If provided a list
+of values then the values are first scanned with C<Data()> and then
+printed, if called with no values then whatever was scanned last with
 C<Data()> or C<Dump()> is printed.
 
-If the C<To()> attribute was provided then will dump to whatever object 
-was specified there (any object, including filehandles that accept the 
+If the C<To()> attribute was provided then will dump to whatever object
+was specified there (any object, including filehandles that accept the
 print() method), and will always return $self.
 
-If the C<To()> attribute was not provided then will use an internal 
-printing object, returning either a list or scalar or printing to STDOUT 
+If the C<To()> attribute was not provided then will use an internal
+printing object, returning either a list or scalar or printing to STDOUT
 in void context.
 
-This routine is virtually always called without arguments as the last 
+This routine is virtually always called without arguments as the last
 method in the method chain.
 
  Dump->Arguments(1)->Out(@vars);
@@ -1618,11 +1880,11 @@ All should DWIM.
 # w/the right tags for now...
 
 sub Out {
-    local($\,$",$,); # prevent globals from messing with our output via print
+    local($\,$",$,); #" prevent globals from messing with our output via print
     my $self = shift->_safe_self;
     print "Out(".scalar(@_)." vars)\n"
         if $DEBUG;
-    if ( @_ or !$self->{cataloged} ) {
+    if ( !$self->{in_printit} and (@_ or !$self->{cataloged} )) {
         $self->Data(@_);
     }
 
@@ -1652,7 +1914,7 @@ sub Out {
     $self->{special}={};
     $DEBUG>9 and $self->diag;
 
-    my @items=@{$args_insideout{$self}};
+    my @items=@{$args_insideout{refaddr $self}};
 
     my $namestr="";
 
@@ -1679,7 +1941,7 @@ sub Out {
 
     $self->{fh}->print("my (",join(",",sort keys %{$self->{lexicals}{added}}),");\n")
         if $self->{lexicals}{added};
-        
+
     foreach my $item (@items) {
         my $dumped=0;
         my $ret=$self->_dump_sv(${$item->{item}},1,\$dumped,$item->{name});
@@ -1704,10 +1966,17 @@ sub Out {
 
 }
 
+sub print_token {
+    my ($self, $str)=@_;
+    $self->{fh}->print($str);
+}
+sub print_quoted {
+    my ( $self, $str )=@_;
+    $self->{fh}->print($str);
+}
 
 sub _dump_sv {
     my ($self,$item,$depth,$dumped,$name,$indent,$is_ref)=@_;
-
 
     $self->{do_nl}=0;
 
@@ -1738,8 +2007,8 @@ sub _dump_sv {
         print "sv_dump Monitored:\n",$self->diag_sv_idx($idx,"  ") if $DEBUG;
 
 
-        if (( $pre_dumped and !$self->{svon}{$idx}) 
-           or (!$self->{svon}{$idx} ? ($self->{svd}[$idx]<$depth or $name_diff) : undef) ) 
+        if (( $pre_dumped and !$self->{svon}{$idx})
+           or (!$self->{svon}{$idx} ? ($self->{svd}[$idx]<$depth or $name_diff) : undef) )
         {
 
             print "PREDUMPED: $self->{svon}{$idx}\n"
@@ -1837,8 +2106,8 @@ sub _dump_sv {
         }
         #push @{$self->{out_names}},$name; #must
         #push @{$self->{declare}},$name;
-        unless ($name=~/^\&/) { # XXX 
-            my $str=(($self->{style}{declare} && $name!~/^\*/ 
+        unless ($name=~/^\&/) { # XXX
+            my $str=(($self->{style}{declare} && $name!~/^\*/
                      && !$self->{lexicals}{added}{$name}
                      ) ? "my " : ""
                      )."$name = ";
@@ -1896,12 +2165,10 @@ sub _dump_sv {
                     no warnings 'numeric';
                     if (_could_be_dualvar($item) && 0+$item ne $item && "$item" != $item ) {
                         $quoted="dualvar( ".join(", ",0+$item,_quote("$item"))." )";
-                    } else {
-                        $quoted=_quote($item);
                     }
-                } else {
-                    $quoted=_quote($item);
                 }
+                $quoted=_quote($item) if !$quoted;
+
                 $self->{buf}+=length($quoted);
                 $self->{buf}=length($1) if $quoted=~/\n([^\n]*)\s*\z/;
                 $self->{fh}->print($quoted); #;
@@ -1949,7 +2216,7 @@ sub _dump_qr {
     my %counts;
     $counts{$_}++ foreach split //,$pat;
     my ($quotes,$best)=('',length($pat)+1);
-    foreach my $char (qw( / ! % & <> {} " ),'#') {
+    foreach my $char (qw( / ! % & <> {} " ),'#') { #"
         my $bad=0;
         $bad+=$counts{$_}||0 for split //,$char;
         ($quotes,$best)=($char,$bad) if $bad<$best;
@@ -1966,88 +2233,71 @@ sub _dump_qr {
     return
 }
 
+=for uedit32
+sub _default_key_sorters{}
 
+=cut
+
+my %default_key_sorters= (
+    numeric => sub  { [ sort {$a <=> $b} keys %{$_[0]} ] },
+    lexical => sub { [ sort keys %{$_[0]} ] },
+    smart => sub  {
+        [
+            map { $_->[-1] }
+            sort {
+                ( $a->[2] <=> $b->[2] )
+                ||
+                (  defined($a->[0])
+                    ? $a->[0] <=> $b->[0] || ($a->[1] cmp $b->[1])
+                    : $a->[1] cmp $b->[1] )
+                ||
+                ( $a->[-1] cmp $b->[-1] )
+            }
+            map {
+                    my $chars=lc($_);
+                    my $num;
+                    $num=$1 if $chars=~
+                        s/\A(-?(?:0|[1-9]\d{0,8})(?:\.\d{0,15})?)(?!\d)//;
+                    $chars=~s/\W//g;
+                    [ $num, $chars, !defined $num ? 2 :
+                        # length($chars) ? 1 :
+                        0, $_ ]
+            }  keys %{$_[0]}
+        ]
+    },
+    'each'=>sub { undef },
+);
+$default_key_sorters{alphabetical}=$default_key_sorters{lexical};
+$default_key_sorters{intelligent}=$default_key_sorters{smart};
+use Text::Abbrev;
+for my $h (\%default_key_sorters) {
+    my $abr=abbrev keys %$h;
+    foreach my $short (keys %$abr) {
+        $h->{$short}=$h->{$abr->{$short}};
+    }
+}
 
 
 sub _get_keys {
-    my ($self,$item,$addr,$class,$pass)=@_;
+    my ($self,$item,$pass,$addr,$class)=@_;
 
-    #print Data::Dumper->Dump([$item,$addr,$class,$pass,@{$self->{style}}{qw(hashkeys sortkeys)}]) if $DEBUG;
+    my $sorter;
+    $class= "" if ! defined $class;
 
-    # object
-    my $ak=$self->{style}{hashkeys}{objs}{$addr};
-    # class
-    my $ck=defined $class ? $self->{style}{hashkeys}{class}{$class}
-                          : $self->{style}{hashkeys}{class}{''};
-
-    # generic
-    my $sk=$self->{style}{sortkeys};
-
-    my $keys;
-    CHECK_STYLE:
-    for my $style ($ak,$ck,$sk) {
-        {
-        print "Style:".(defined($ak) ? "'$ak'" : 'undef')."\n"
-            if $DEBUG;
-        }
-        $keys=undef;
-        if ($style) {
-            my $rtype=reftype($style);
-            if ($rtype) {
-                if ($rtype eq 'CODE') {
-                    $keys =$style->($item,$addr,$class,$pass);
-                    ($style = $keys),redo CHECK_STYLE
-                       unless reftype($keys) eq 'ARRAY';
-                } elsif ($rtype eq 'ARRAY') {
-                    $keys=$style;
-                } elsif ($rtype eq 'HASH') {
-                    $keys=[map {
-                                ($style->{$_})
-                                 ? $_
-                                 : (exists($item->{$_}))
-                                    ? $_
-                                    : ()
-                              } keys %$style
-                         ];
-                } else {
-                    Carp::confess "What kind of reference is an '$rtype' for HashKeys()/SortKeys()!?";
-                }
-                my %u;
-                # remove any dupes.
-                @$keys=grep defined($_)&&!$u{$_}++,@$keys
-                    unless $rtype eq 'HASH';
-            } elsif ($style=~/num/i) {
-                $keys = [ sort {$a <=> $b} keys %$item ];
-            } elsif ($style=~/alph|lex/i) {
-                $keys = [ sort keys %$item ];
-            } else {
-                Carp::carp "Don't know '$style' SortKeys option, defaulting to 'smart'"
-                    unless $style=~/smart/i;
-                $keys=[
-                            map { $_->[-1] }
-                	    sort {
-                	        ( !defined($a->[0]) cmp !defined($b->[0]) )
-                	        ||
-                	        (  defined($a->[0]) ? $a->[0] <=> $b->[0] || ($a->[1] cmp $b->[1])
-                	                            : $a->[1] cmp $b->[1] )
-                	        ||
-                	        ( $a->[-1] cmp $b->[-1] )
-                	    }
-                	    map {
-                	            (my $chars=lc($_))=~s/\A(-?(?:0|[1-9]\d{0,8})(?:\.\d{0,15})?)(?!\d)//;
-                	            my $num=$1;
-                        	    [ $num, $chars, $_, ]
-                	    }  keys %$item
-        	    ];
-            }
-
-        } else {
-            $keys=$style;
-        }
-        last if defined $keys;
+    $sorter=   $self->{style}{sortkeys}{"#$addr"}
+            || $self->{cache_sorter}{$class};
+    if ( ! $sorter ) {
+        $sorter= $self->{style}{sortkeys}{".$class"}
+                || ($class && $class->can("DDS_sortkeys") )
+                || $self->{style}{sortkeys}{"."};
+        ;
+        $self->{cache_sorter}{$class}=
+            ($sorter ||= $default_key_sorters{smart});
     }
-    keys %$item unless $keys;
-    return $keys ? $keys : undef;
+    my ($ary,$thaw)=$sorter->( $item, $pass, $addr, $class );
+    die "$item:$pass:$addr:$class:$ary:$thaw"
+         if $ary and reftype($ary) ne "ARRAY";
+    return ($ary,$thaw);
 }
 
 
@@ -2056,9 +2306,9 @@ sub _dump_hash {
 
     #Carp::confess "$name" unless defined $self->{ref_hkcnt}{$addr};
 
-    my $keys=$self->_get_keys($item,$addr,$class,1);
+    my ($keyary)= $self->_get_keys($item,1,$addr,$class);
 
-    warn "Keys: $keys : @$keys" if $keys and $DEBUG;
+    warn "Keys: $keyary : @$keyary" if $keyary and $DEBUG;
 
     my $full_indent=$self->{style}{indent}>1;
     my $ind=($self->{style}{indent}) &&
@@ -2077,7 +2327,7 @@ sub _dump_hash {
     my ($kc,$ix)=(0,0);
     my $last_n=0;
     my $ind_str=" " x $indent;
-    while (defined(my $k=defined $keys ? $keys->[$ix++] : each %$item)) {
+    while (defined(my $k=defined $keyary ? $keyary->[$ix++] : each %$item)) {
        $last_n=0 if ref $item->{$k};
         if ( $kc ) {
             my $do_ind=$ind && !$last_n ;
@@ -2249,16 +2499,16 @@ sub _dump_code {
         $self->{fh}->print($self->{style}{codestub});
     } else { #deparseopts
         my $cv=svref_2object($item);
-        
+
         if (ref($cv->ROOT)=~/NULL/) {
             my $gv=$cv->GV;
             $self->{fh}->print("\\&",$gv->STASH->NAME,"::",$gv->SAFENAME);
             return;
-        }  
-            
+        }
+
         my $deparser=Data::Dump::Streamer::Deparser->new(@{$self->{style}{deparseopts}});
-        
-        my $used=get_lexicals($item);
+
+        my $used= get_lexicals($item);
         my %targ;
         foreach my $targ (keys %$used) {
             next if $targ=~/\D/;
@@ -2266,10 +2516,10 @@ sub _dump_code {
             $targ{$targ}=$self->{lexicals}{a2n}{$addr}
                 if $self->{lexicals}{a2n}{$addr};
         }
-        
+
         # we added this method, its not a normal method. see bottom of file.
-        $deparser->dds_usenames(\%targ); 
-        
+        $deparser->dds_usenames(\%targ);
+
         my $bless=undef;
         my $code;
         DEPARSE:{
@@ -2289,9 +2539,9 @@ sub _dump_code {
                 return;
             }
         }
-        
+
         #$self->{fh}->print("\n#",join " ",keys %$used,"\n");
-        
+
         #$code=~s/^\s*(\([^)]+\)|)\s*/sub$1\n/;
         $code="sub".($code=~/^\s*\(/ ? "" : " ").$code;
         if ($self->{style}{indent}) {
@@ -2361,7 +2611,8 @@ sub _dump_symbol {
 sub _dump_rv {
     my ($self,$item,$depth,$dumped,$name,$indent,$add_do)=@_;
 
-    my ($addr,$idx,$type,$class,$frozen,$overloaded);
+    my ($addr,$idx,$type,$class,$is_frozen_replacement,$overloaded,
+        $raddr);
     GETITEM: {
         $addr=refaddr($item) or Carp::confess "$name : $item";
         $idx=$self->{ref}{$addr};
@@ -2372,20 +2623,29 @@ sub _dump_rv {
         $DEBUG and
         printf "_dump_rv %d %s %#x\n",$depth,$name,$addr;
 
-        if ($self->{ref_fz}{$addr} and !$frozen) {
-            $item=$self->{ref_fz}{$addr};
-            $frozen=1;
-            redo GETITEM;
+        my $ignore=0;
+        if ($self->{ref_fz}{$addr}) {
+            $item= $self->{ref_fz}{$addr};
+            if ( ! $item ) {
+                $ignore=1;
+            } elsif (ref $item) {
+                $is_frozen_replacement=1;
+                $raddr=$addr;
+                redo GETITEM;
+            } else {
+                $self->{buf}+=length($item);
+                $self->{fh}->print($item);
+                return
+            }
         }
-    }
-
-
-
-    if (defined $class and $self->{style}{ignoreclass}{$class}) {
-        my $str=_quote("Ignored Obj [".overload::StrVal($item)."]");
-        $self->{buf}+=length($str);
-        $self->{fh}->print($str);
-        return
+        if ($ignore or $self->{style}{ignore}{"#".($raddr||$addr)} or
+            (defined $class and $self->{style}{ignore}{".$class"} )
+        ){
+            my $str= _quote("Ignored Obj [".overload::StrVal($item)."]");
+            $self->{buf} += length($str);
+            $self->{fh}->print($str);
+            return
+        }
     }
 
 
@@ -2444,9 +2704,25 @@ sub _dump_rv {
     } else {
         Carp::confess "Unhandled object '$item'\n";
     }
+    my $isoverloaded=0;
     if (defined $class and overload::Overloaded($item)) {
         bless $item, 'Does::Not::Exist';
-        $overloaded=$class;
+        $overloaded= $class;
+        $isoverloaded= 1;
+    }
+    my $thaw= $self->{ref_thaw}{$raddr||$addr};
+    my ($inline,$thawtype);
+    if ( $thaw ) {
+        if ($thaw =~ /[^\w:>()-]/) {
+           $thawtype= "code";
+        }  else{
+            $inline= $thaw=~s/^->//;
+            $thawtype= $thaw=~s/\(\)$// ? "sub" : "method";
+        }
+        if ($inline && $thawtype eq 'sub') {
+            $self->{buf}+=length($thaw)+1;
+            $self->{fh}->print($thaw."( ");
+        }
     }
     $self->{do_nl}=1;
     my $add_lock=($type eq 'HASH') && SvREADONLY_ref($item);
@@ -2505,24 +2781,11 @@ sub _dump_rv {
         } else {
             $self->_add_fix('bless',$idx,$overloaded);
         }
-        bless $item, $overloaded
-            if defined $overloaded;
-        if (my $meth=$self->{style}{thawclass}{$class}||$self->{style}{thaw}){
-            my $now=$meth=~s/^->//;
-            if ($item->can($meth)) {
-                if ($now and !$overloaded) {
-                    # XXX what should happen here when its overloaded?
-                    # is this right???? Somehow i doubt it. 
-                    $self->{fh}->print("->$meth()");
-                } else {
-                    $self->_add_fix('method call',$idx,$meth); #thaw
-                }
-                $item->$meth()
-                    if ($self->{style}{freezeclass}{$class}||$self->{style}{freeze})
-                       and !$frozen; # $frozen is only true f a replacement was used
-            }
+        if ($isoverloaded) {
+            $item=bless $item, $overloaded;
         }
-    } elsif ($fix_lock && !defined($class)) {
+    }
+    if ($fix_lock && !defined($class)) {
         $self->_add_fix('lock',$idx,\@hidden_keys);
     }
     if ($add_lock) {
@@ -2531,10 +2794,26 @@ sub _dump_rv {
         }
         $self->{fh}->print(" )");
     }
+    if ( $thaw ) {
+        if ($inline) {
+            if ($thawtype eq 'sub') {
+                $self->{fh}->print(" )");
+            } elsif ($thawtype eq 'method') {
+                $self->{fh}->print("->$thaw()");
+            }
+        } else {
+            $self->_add_fix('thaw',$idx,$thaw.($thawtype eq 'sub' ? "()" :"" ));
+        }
+    }
+    if ( my $postop=$self->{ref_postop}{$raddr||$addr} ) {
+        if (ref $postop) {
+            $postop->($_[1]);
+        } else {
+            $_[1]->$postop();
+        }
+    }
     $self->{do_nl}=1;
-   
-    
-    
+
     return
 }
 
@@ -2544,18 +2823,18 @@ sub _dump_rv {
 
 =item Names ARRAYREF
 
-Takes a list of strings or a reference to an array of strings to use for 
-var names for the objects dumped. The names may be prefixed by a * 
-indicating the variable is to be dumped as its dereferenced type if it is 
-an array, hash or code ref. Otherwise the star is ignored. Other sigils 
+Takes a list of strings or a reference to an array of strings to use for
+var names for the objects dumped. The names may be prefixed by a *
+indicating the variable is to be dumped as its dereferenced type if it is
+an array, hash or code ref. Otherwise the star is ignored. Other sigils
 may be prefixed but they will be silently converted to *'s.
 
-If no names are provided then names are generated automatically based on 
-the type of object being dumped, with abreviations applied to compound 
+If no names are provided then names are generated automatically based on
+the type of object being dumped, with abreviations applied to compound
 class names.
 
-If called with arguments then returns the object itself, otherwise in list 
-context returns the list of names in use, or in scalar context a reference 
+If called with arguments then returns the object itself, otherwise in list
+context returns the list of names in use, or in scalar context a reference
 or undef. In void context with no arguments the names are cleared.
 
 B<NOTE:>
@@ -2567,7 +2846,7 @@ sub Names {
     my $self = shift->_safe_self;
     if (@_) {
         my $v=(@_==1 and reftype $_[0] eq 'ARRAY') ? shift @_ : \@_;
-        $self->{unames} = [ map { ( my $s = $_ ) =~ s/^[\@\%\&\$]/*/;
+        $self->{unames} = [ map { ( my $s = $_ ) =~ s/^[\@\%\&\$-]/*/;
                                     Carp::confess "Bad name '$_'" if $s!~/^\*?\w+$/;
                                     $s
                                 } @$v ];
@@ -2575,6 +2854,11 @@ sub Names {
     } elsif (! defined wantarray ) {
         $self->{unames}=[];
     }
+    #elsif ( eval { require PadWalker; 1 } ) {
+    #    print DDumper(PadWalker::peek_my(1));
+    #    return $self;
+    #}
+
     return wantarray ? @{$self->{unames}||[]} : $self->{unames}
 }
 
@@ -2585,33 +2869,33 @@ sub Purity {}
 
 =item Purity BOOL
 
-This option can be used to set the level of purity in the output. It 
-defaults to TRUE, which results in the module doing its best to ensure 
-that the resulting dump when eval()ed is precisely the same as the input. 
-However, at times such as debugging this can be tedius, resulting in 
-extremely long dumps with many "fix" statements involved.  By setting 
-Purity to FALSE the resulting output won't necessarily be legal Perl, but 
-it will be more legible. In this mode the output is boardly similar to 
-that of the default setting of Data::Dumper (Purity(0)). When set to TRUE 
-the behaviour is likewise similar to Data::Dumper in Purity(1) but more 
+This option can be used to set the level of purity in the output. It
+defaults to TRUE, which results in the module doing its best to ensure
+that the resulting dump when eval()ed is precisely the same as the input.
+However, at times such as debugging this can be tedius, resulting in
+extremely long dumps with many "fix" statements involved.  By setting
+Purity to FALSE the resulting output won't necessarily be legal Perl, but
+it will be more legible. In this mode the output is boardly similar to
+that of the default setting of Data::Dumper (Purity(0)). When set to TRUE
+the behaviour is likewise similar to Data::Dumper in Purity(1) but more
 accurate.
 
-When Purity() is set to FALSE aliases will be output with a function call 
-wrapper of 'alias_to' whose argument will be the value the item is an 
-alias to. This wrapper does nothing, and is only there as a visual cue. 
-Likewise, 'make_ro' will be output when the value was readonly, and again 
+When Purity() is set to FALSE aliases will be output with a function call
+wrapper of 'alias_to' whose argument will be the value the item is an
+alias to. This wrapper does nothing, and is only there as a visual cue.
+Likewise, 'make_ro' will be output when the value was readonly, and again
 the effect is cosmetic only.
 
 =item To
 
 =item To STREAMER
 
-Specifies the object to print to. Data::Dump::Streamer can stream its 
-output to any object supporting the print method. This is primarily meant 
-for streaming to a filehandle, however any object that supports the method 
+Specifies the object to print to. Data::Dump::Streamer can stream its
+output to any object supporting the print method. This is primarily meant
+for streaming to a filehandle, however any object that supports the method
 will do.
 
-If a filehandle is specified then it is used until it is explicitly 
+If a filehandle is specified then it is used until it is explicitly
 changed, or the object is destroyed.
 
 =cut
@@ -2632,10 +2916,10 @@ sub Declare     {}
 
 =item Declare BOOL
 
-If Declare is True then each object is dumped with 'my' declarations 
-included, and all rules that follow are obeyed. (Ie, not referencing an 
-undeclared variable). If Declare is False then all objects are expected to 
-be previously defined and references to top level objects can be made at 
+If Declare is True then each object is dumped with 'my' declarations
+included, and all rules that follow are obeyed. (Ie, not referencing an
+undeclared variable). If Declare is False then all objects are expected to
+be previously defined and references to top level objects can be made at
 any time.
 
 Defaults to False.
@@ -2647,11 +2931,11 @@ sub Indent      {}
 
 =item Indent INT
 
-If Indent is True then data is output in an indented and fairly neat 
-fashion. If the value is 2 then hash key/value pairs and array values each 
-on their own line. If the value is 1 then a "smart" indenting mode is 
-activated where multiple key/value or values may be printed to the same 
-line. The heuristics for this mode are still experimental so it may 
+If Indent is True then data is output in an indented and fairly neat
+fashion. If the value is 2 then hash key/value pairs and array values each
+on their own line. If the value is 1 then a "smart" indenting mode is
+activated where multiple key/value or values may be printed to the same
+line. The heuristics for this mode are still experimental so it may
 occassional not indent very nicely.
 
 Default is Indent(2)
@@ -2669,9 +2953,9 @@ sub IndentKeys      {}
 
 =item Indentkeys BOOL
 
-If Indent() and Indentkeys are True then hashes with more than one key 
-value pair are dumped such that the keys and values line up. Note however 
-this means each key has to be quoted twice. Not advised for very large 
+If Indent() and Indentkeys are True then hashes with more than one key
+value pair are dumped such that the keys and values line up. Note however
+this means each key has to be quoted twice. Not advised for very large
 data structures. Additional logic may enhance this feature soon.
 
 Defaults to True.
@@ -2680,79 +2964,40 @@ B<NOTE:>
 Must be set before C<Data()> is called.
 
 =for UEDIT
-sub SortKeys      {}
-sub Sortkeys      {}
+sub Keyorder      {}
 
-=item SortKeys
+=item KeyOrder TYPE_OR_OBJ
 
-=item SortKeys TYPE_OR_CODE
+=item KeyOrder TYPE_OR_OBJ, VALUE
 
-=item Sortkeys
+Sets or returns the key order to for use for a given type or object.
 
-=item Sortkeys TYPE_OR_CODE
+TYPE_OR_OBJ may be a string representing a class, or "" for representing
+unblessed objects, or it maybe a reference to a hash.
 
-If False then hashes are iterated using each(), and are output in whatever 
-order your particular instance of perl provides, which varies across OS, 
-architecture and version. This requires considerably less memory, and 
-time.
+VALUE may be a string representing one of built in sort mechanisms, or
+it may be a reference to a subroutine, or a method name if TYPE_OR_OBJ
+is not an object.
 
-If True then hashes are sorted before dumping. If the value matches 
-C</alph|lex/i> then a lexicographical sort order is imposed. If the value 
-matches C</num/i> then a numeric sort order is imposed, and if the value 
-matches C</smart/i> then a sort order akin to a dictionary sort is 
-imposed. This order is the default and probably will do the right thing 
-for most key sets.
+The built in sort mechanisms are 'aphabetical'/'lexical', 'numeric',
+'smart'/'intelligent' and 'each'.
 
-A user may also provide a CODE ref to be used for sorting and prefiltering 
-the hash keys.  The hash to be sorted will be passed by reference to the 
-sub, and the sub is expected to return a reference to an array of keys to 
-dump, a string like above, or false for perls ordering. Note that this 
-subroutine will be called twice per hash per dump, with the number of the 
-pass (0 or 1) as the second parameter. The behaviour of returning 
-different values on each pass is not well defined, but it is likely that 
-returning less keys (but the same ordering) on the second pass will be 
-viable. Returning more keys or a different ordering probably wont be.
+If VALUE is omitted returns the current value for the given type.
+
+If TYPE_OR_OBJ is omitted or FALSE it defaults to "" which represents
+unblessed hashes.
 
 See L<"Controlling Hash Traversal and Display Order"> for more details.
 
-B<Note> that C<Sortkeys()> is a synonym for C<SortKeys()> for 
-compatibility with expectations formed by Data::Dumper. Data::Dumper 
-provides the former, but the latter is consistant with the method naming 
-scheme in this module. So in the spirit of TIMTOWTDI you can use either. 
-:-)
+=item SortKeys
 
-=for UEDIT
-sub Hashkeys      {}
+=item SortKeys VALUE
 
-=item HashKeys
+This is a wrapper for KeyOrder. It allows only the generic hash
+sort order to be specified a little more elegantly than via KeyOrder().
+It is syntactically equivelent to
 
-=item HashKeys LIST
-
-=item Hashkeys
-
-=item Hashkeys LIST
-
-In addition to L<SortKeys> it is possible to further fine tune the 
-traversal and ordering of hashes by using HashKeys().  Using this method 
-you may specify either a specific ordering as in L<SortKeys>, or a coderef 
-similar to that used in L<SortKeys> based on the hashrefs specific 
-identity or its class. The only difference between the returns of the 
-coderefs between the two methods is that if a HashKeys() rule returns 
-undef then a fallback occurs to the SortKeys() rule. However if defined 
-but false is returned then Perls internal ordering is used.
-
-If provided a list it expects either $hash_refernce=>VALUE pairs or 
-'CLASS::NAME'=>VALUE pairs, and return $self. If called with no parameters 
-in list or scalar context returns the options currently set, and if called 
-with no parameters in void context clears all HashKeys() settings.
-
-See L<"Controlling Hash Traversal and Display Order"> and L<"SortKeys"> 
-for more details.
-
-B<Note> that C<Hashkeys()> is a synonym for C<HashKeys()> for 
-compatibility with expectations formed by Data::Dumper with regard to the 
-method Sortkeys(). See L<SortKeys> for details of this method and the 
-reason behind the synonym.
+  $self->KeyOrder( "", @_ );
 
 =for UEDIT
 sub Verbose      {}
@@ -2761,23 +3006,23 @@ sub Verbose      {}
 
 =item Verbose BOOL
 
-If Verbose is True then when references that cannot be resolved in a 
-single statement are encountered the reference is substituted for a 
-descriptive tag saying what type of forward reference it is, and to what 
-is being referenced. The type is provided through a prefix, "R:" for 
-reference, and "A:" for alias, "V:" for a value and then the name of the 
-var in a string. Automatically generated var names are also reduced to the 
-shortest possible unique abbreviation, with some tricks thrown in for 
-Long::Class::Names::Like::This (which would abbreviate most likely to 
+If Verbose is True then when references that cannot be resolved in a
+single statement are encountered the reference is substituted for a
+descriptive tag saying what type of forward reference it is, and to what
+is being referenced. The type is provided through a prefix, "R:" for
+reference, and "A:" for alias, "V:" for a value and then the name of the
+var in a string. Automatically generated var names are also reduced to the
+shortest possible unique abbreviation, with some tricks thrown in for
+Long::Class::Names::Like::This (which would abbreviate most likely to
 LCNLT1)
 
-If Verbose if False then a simple placeholder saying 'A' or 'R' is 
-provided. (In most situations perl requires a placeholder, and as such one 
+If Verbose if False then a simple placeholder saying 'A' or 'R' is
+provided. (In most situations perl requires a placeholder, and as such one
 is always provided, even if technically it could be omitted.)
 
-This setting does not change the followup statements that fix up the 
-structure, and does not result in a loss of accuracy, it just makes it a 
-little harder to read. OTOH, it means dumps can be quite a bit smaller and 
+This setting does not change the followup statements that fix up the
+structure, and does not result in a loss of accuracy, it just makes it a
+little harder to read. OTOH, it means dumps can be quite a bit smaller and
 less noisy.
 
 Defaults to True.
@@ -2792,7 +3037,7 @@ sub DumpGlob {}
 
 =item DumpGlob BOOL
 
-If True then globs will be followed and fully defined, otherwise the globs 
+If True then globs will be followed and fully defined, otherwise the globs
 will still be referenced but their current value will not be set.
 
 Defaults to True
@@ -2807,14 +3052,14 @@ sub Deparse {}
 
 =item Deparse BOOL
 
-If True then CODE refs will be deparsed use L<B::Deparse|B::Deparse> and 
-included in the dump. If it is False the a stub subroutine reference will 
+If True then CODE refs will be deparsed use L<B::Deparse|B::Deparse> and
+included in the dump. If it is False the a stub subroutine reference will
 be output as per the setting of C<CodeStub()>.
 
-Caveat Emptor, dumping subroutine references is hardly a secure act, and 
+Caveat Emptor, dumping subroutine references is hardly a secure act, and
 it is provided here only for convenience.
 
-Note using this routine is at your own risk as of DDS 1.11, how it 
+Note using this routine is at your own risk as of DDS 1.11, how it
 interacts with the newer advanced closure dumping process is undefined.
 
 =for UEDIT
@@ -2824,15 +3069,15 @@ sub EclipseName {}
 
 =item EclipseName SPRINTF_FORMAT
 
-When necessary DDS will rename vars output during deparsing with this 
-value. It is a sprintf format string that should contain only and both of 
-the "%s" and a "%d" formats in any order along with whatever other literal 
-text you want in the name. No checks are performed on the validity of this 
+When necessary DDS will rename vars output during deparsing with this
+value. It is a sprintf format string that should contain only and both of
+the "%s" and a "%d" formats in any order along with whatever other literal
+text you want in the name. No checks are performed on the validity of this
 value so be careful. It defaults to
 
   "%s_eclipse_%d"
-  
-where the "%s" represents the name of the var being eclipsed, and the "%d" 
+
+where the "%s" represents the name of the var being eclipsed, and the "%d"
 a counter to ensure all such mappings are unique.
 
 =for UEDIT
@@ -2844,14 +3089,14 @@ sub DeparseOpts {}
 
 =item DeparseOpts ARRAY
 
-If Deparse is True then these options will be passed to B::Deparse->new() 
-when dumping a CODE ref. If passed a list of scalars the list is used as 
-the arguments. If passed an array reference then this array is assumed to 
-contain a list of arguments. If no arguments are provided returns a an 
-array ref of arguments in scalar context, and a list of arguments in list 
+If Deparse is True then these options will be passed to B::Deparse->new()
+when dumping a CODE ref. If passed a list of scalars the list is used as
+the arguments. If passed an array reference then this array is assumed to
+contain a list of arguments. If no arguments are provided returns a an
+array ref of arguments in scalar context, and a list of arguments in list
 context.
 
-Note using this routine is at your own risk as of DDS 1.11, how it 
+Note using this routine is at your own risk as of DDS 1.11, how it
 interacts with the newer advanced closure dumping process is undefined.
 
 =for UEDIT
@@ -2861,8 +3106,8 @@ sub CodeStub {}
 
 =item CodeStub STRING
 
-If Deparse is False then this string will be used in place of CODE 
-references. Its the users responsibility to make sure its compilable and 
+If Deparse is False then this string will be used in place of CODE
+references. Its the users responsibility to make sure its compilable and
 blessable.
 
 Defaults to 'sub { Carp::confess "Dumped code stub!" }'
@@ -2874,8 +3119,8 @@ sub FormatStub {}
 
 =item FormatStub STRING
 
-If Deparse is False then this string will be used in place of FORMAT 
-references. Its the users responsibility to make sure its compilable and 
+If Deparse is False then this string will be used in place of FORMAT
+references. Its the users responsibility to make sure its compilable and
 blessable.
 
 Defaults to 'do{ local *F; eval "format F =\nFormat Stub\n.\n"; *F{FORMAT} }'
@@ -2887,7 +3132,7 @@ sub DeparseGlob {}
 
 =item DeparseGlob BOOL
 
-If Deparse is TRUE then this style attribute will determine if subroutines 
+If Deparse is TRUE then this style attribute will determine if subroutines
 and FORMAT's contained in globs that are dumped will be deparsed or not.
 
 Defaults to True.
@@ -2904,8 +3149,8 @@ sub Dualvars {}
 
 =item Dualvars BOOL
 
-If TRUE then dualvar checking will occur and the required statements 
-emitted to recreate dualvars when they are encountered, otherwise items 
+If TRUE then dualvar checking will occur and the required statements
+emitted to recreate dualvars when they are encountered, otherwise items
 will be dumped in their stringified form always. It defaults to TRUE.
 
 =for UEDIT
@@ -2920,123 +3165,121 @@ sub RLE {}
 
 =item RLE BOOL
 
-If True then arrays will be run length encoded using the C<x> operator. 
-What this means is that if an array contains repeated elements then 
-instead of outputting each and every one a list multiplier will be output. 
+If True then arrays will be run length encoded using the C<x> operator.
+What this means is that if an array contains repeated elements then
+instead of outputting each and every one a list multiplier will be output.
 This means that considerably less space is taken to dump redundant data.
 
-=for UEDIT
-sub Freeze {}
+=item Freezer
 
-=item Freeze
+=item Freezer ACTION
 
-=item Freeze METHOD
+=item Freezer CLASS, ACTION
 
-If set to a string then this method will be called on ALL objects before 
-they are dumped. This method may either, change the internal contents of 
-the reference to something suitable for dumping, or may alter $_[0] and 
-have that used _instead_ of the real object reference.
+This method can be used to override the DDS_freeze hook for a
+specific class. If CLASS is omitted then the ACTION applies to
+all blessed object.
 
-B<NOTE:>
-Must be set before C<Data()> is called.
+If ACTION is false it indicates that the given CLASS should not
+have any serilization hooks called.
 
-=for UEDIT
-sub Thaw {}
+If ACTION is a string then it is taken to be the method name that
+will be executed to freeze the object. CLASS->can(METHOD) must return
+true or the setting will be ignored.
 
-=item Thaw
+If ACTION is a code ref it is executed with the object as the argument.
 
-=item Thaw METHOD
+When called with no arguments returns in scalar context the generic
+serialization method (defaults to 'DDS_freeze'), in list context
+returns the generic serialization method followed by a list of pairs
+of Classname=>ACTION.
 
-If set to a string then this method will be called on ALL objects after 
-they are dumped.
+If the action executes a sub or method it is expected to return
+a list of three values:
 
-B<NOTE:>
-Must be set before C<Data()> is called.
+   ( $proxy, $thaw, $postdump )=$obj->DDS_Freeze();
 
-=for UEDIT
-sub FreezeClass {}
-
-=item FreezeClass
-
-=item FreezeClass CLASS
-
-=item FreezeClass CLASS, METHOD
-
-=item FreezeClass LIST
-
-Defines methods to be used to freeze specific classes. These settings 
-override Freeze.  If one argument is provided then it returns the method 
-for that class. If two arguments are provided then it sets the dump method 
-for the given class. If more than two arguments are provided then it is 
-assumed it is a list of CLASS, METHOD pairs and sets the entire list, 
-discarding any existing settings. Called with no arguments in void setting 
-clears the overall set of CLASS/METHOD pairs. Called with no arguments in 
-list context returns all CLASS/METHOD pairs. Called with no arguments in 
-scalar content returns a reference to the hash.
-
-B<NOTE:>
-Must be set before C<Data()> is called.
-
-=for UEDIT
-sub ThawClass   {}
-
-
-=item ThawClass
-
-=item ThawClass CLASS
-
-=item ThawClass CLASS, METHOD
-
-=item ThawClass LIST
-
-Similar to FreezeClass, but called when evaling the data structure back 
-into existance. Has the same calling semantics as FreezeClass.
-
-B<NOTE:>
-Must be set before C<Data()> is called.
-
-
-
-=item FreezeThaw CLASS, FREEZE_METHOD, THAW_METHOD
-
-=item FreezeThaw LIST
-
-FreezeThaw merges the features of FreezeClass and ThawClass into a single 
-method. It takes a list of triplets and then calls those method as 
-necessary. Purely a bit of syntactitc sugar because I realized the 
-original interface was a bit clunky to use.
-
-FreezeThaw does not currently support 'get' semantics and cannot be used 
-to clear both options. This will probably come in a later release.
-
-B<NOTE:>
-Must be set before C<Data()> is called.
-
-=for UEDIT
-sub IgnoreClass {}
-
-=item IgnoreClass
-
-=item IgnoreClass CLASS
-
-=item IgnoreClass CLASS, METHOD
-
-=item IgnoreClass LIST
-
-Similar to FreezeClass, but instead of changing how the object is dumped, 
-causes the object to be outright ignored if is an instance of barred 
-class. The position in the data structure will be filled with a string 
-containing the name of the class ignored. Has the same calling semantics 
-as FreezeClass.
+See L<Controlling Object Representation> for more details.
 
 B<NOTE:>
 Must be set before C<Data()> is called.
 
 =cut
 
+sub Freezer {
+    my $self= shift;
+    if ( @_==1 ) {
+        $self->{style}{freezer}= shift;
+        return $self;
+    } elsif ( @_==2 ) {
+        my ( $class, $action )= @_;
+        $self->{style}{freeze_class}{$class}= $action;
+        return $self;
+    }
+    return wantarray ? ($self->{style}{freezer},
+                        map { $_ => $self->{style}{freeze_class}{$_} }
+                        keys %{$self->{style}{freeze_class}} )
+                     : $self->{style}{freezer};
+}
+
+sub ResetFreezer {
+    my $self=shift;
+    $self->{style}{freezer}='DDS_freeze';
+    $self->{style}{freeze_class}={};
+    return $self;
+}
+
+=item Ignore
+
+=item Ignore OBJ_OR_CLASS
+
+=item Ignore OBJ_OR_CLASS, BOOL
+
+Allows a given object or class to be ignored, and replaced with
+a string containing the name of the item ignored.
+
+If called with no args returns a list of items ignored (using the refaddr
+to represent objects). If called with a single argument returns whether
+that argument is ignored. If called with more than one arguments then
+expects a list of pairs of object => is_ignored.
+
+Returns $self when setting.
+
+B<NOTE:>
+Must be set before C<Data()> is called.
+
+=cut
+
+sub Ignore {
+    my $self=shift;
+     if (@_==0) {
+        return map { s/^.//; $_ } keys %{$self->{style}{ignore}};
+    }
+    Carp::confess("Must have an even number of arguments in Ignore()")
+        if @_>1 && @_ %2;
+    while (@_) {
+        my $item=shift;
+        if ( ref $item ) {
+            $item="#".refaddr($item);
+        } else {
+            $item=".$item";
+        }
+        if ( ! @_ ) {
+            return $self->{style}{ignore}{$item};
+        }
+        if ( shift ) {
+            $self->{style}{ignore}{$item}= 1;
+        } else {
+            delete $self->{style}{ignore}{$item};
+        }
+    }
+    return $self;
+}
+
+
 # weird styling here deliberate.
-sub 
-DeparseOpts 
+sub
+DeparseOpts
 {
     my $self=shift;
     if (@_) {
@@ -3052,55 +3295,63 @@ DeparseOpts
     }
 }
 
-sub FreezeThaw {
-    my $self=shift;
-    if (@_) {
-        Carp::confess("Argument to FreezeThaw must be in (Class Freeze Thaw) triplets")
-            if @_ % 3;
-        while (@_) {
-            my $class =shift @_;
-            my $freeze=shift @_;
-            my $thaw  =shift @_;
-            $self->FreezeClass($class,$freeze);
-            $self->ThawClass($class,$thaw);
-        }
-        return $self
-    } else {
-        Carp::confess("FreezeThaw with no arguments is undefined.")
-    }
-}
+sub KeyOrder {
+    my $self= shift;
+    Carp::croak("KeyOrder() Must have an even number of arguments if doing a multiple set.")
+        if @_>2 and @_ % 2;
 
-sub HashKeys {
-    my $self=shift;
-    if (@_) {
-        while (@_) {
-            my $obj=shift;
-            if (ref $obj) {
-                $self->{style}{hashkeys}{refs}{refaddr($obj)}=$obj;
-                $self->{style}{hashkeys}{objs}{refaddr($obj)}=shift;
-            } else {
-                $self->{style}{hashkeys}{class}{$obj}=shift;
-            }
+    while (@_) {
+        my $obj= shift;
+        my $name;
+        if (ref $obj) {
+            $name= "#"  .refaddr($obj)
+        } else {
+            $name= "" if ! defined $obj;
+            $name= ".$obj";
         }
-        print Data::Dumper->Dump([$self->{style}{hashkeys}]) if $DEBUG;
-        return $self;
-    } elsif (defined wantarray) {
-        return (%{$self->{style}{hashkeys}{class}},
-                map { $self->{style}{hashkeys}{objs}{$_} =>
-                      $self->{style}{hashkeys}{refs}{$_} }
-                keys %{$self->{style}{hashkeys}{refs}} )
-    } else {
-        delete $self->{style}{hashkeys};
+        if ( ! @_ ) {
+            return $self->{style}{sortkeys_string}{$name}||
+                   $self->{style}{sortkeys}{$name};
+        }
+        my $val= shift;
+        if ( ! defined $val ) {
+            delete $self->{style}{sortkeys}{$name};
+            delete $self->{style}{sortkeys_string}{$name};
+        } else {
+            if ( ! ref $val ) {
+                my $subref= $default_key_sorters{$val};
+                Carp::confess("Unblessed or per object Sortkeys() must be coderefs:'$val'\n")
+                        if (!$subref or $name eq "." )
+                        and reftype($subref) ne "CODE";
+                $subref ||= $obj->can($val);
+                die "Unknown sortkeys '$val', and "
+                    .  (ref($obj)||$obj)." doesn't know how to do it.\n"
+                    if !$subref;
+                $self->{style}{sortkeys_string}{$name}=$val;
+                $val= $subref;
+            } elsif ( reftype($val) eq 'ARRAY' ) {
+                my $aryref= $val;
+                $val= sub{ return $aryref; };
+            } elsif ( reftype($val) ne 'CODE' ) {
+                Carp::confess("Can't use '$val' as KeyOrder() value");
+            }
+            $self->{style}{sortkeys}{$name}= $val;
+        }
     }
+    return $self;
 }
-*Hashkeys=*HashKeys;
+*Keyorder=*KeyOrder;
+sub SortKeys {
+    my $self=shift;
+    $self->KeyOrder("",@_);
+}
+*Sortkeys= *SortKeys;
+*HashKeys = *Hashkeys = *KeyOrder;
 
 my %scalar_meth=map{ $_ => lc($_)}
-      qw(Declare Indent IndentCols SortKeys Sortkeys IndentKeys
+      qw(Declare Indent IndentCols IndentKeys
         Verbose DumpGlob Deparse DeparseGlob DeparseFormat CodeStub
-        FormatStub Rle RLE Purity DualVars Dualvars Freeze Thaw
-        EclipseName);
-my %hash_meth=map {$_ => lc($_)} qw(FreezeClass ThawClass IgnoreClass);
+        FormatStub Rle RLE Purity DualVars Dualvars EclipseName);
 
 sub AUTOLOAD {
     (my $meth=$AUTOLOAD)=~s/^((?:\w+::)+)//;
@@ -3120,31 +3371,6 @@ sub AUTOLOAD {
         ';
         $@ and die "$meth:$@\n";
         goto &$meth;
-    } elsif (defined($name=$hash_meth{$meth})) {
-        $DEBUG and print "AUTLOADING hash meth $meth ($name)\n";
-        eval '
-        sub '.$meth.' {
-            my $self=shift->_safe_self();
-            if (@_==1) {
-                my $class=shift;
-                return $self->{style}{'.$name.'}{$class};
-            } elsif (@_==2) {
-                my $class=shift;
-                $self->{style}{'.$name.'}{$class}=shift;
-                return $self
-            } elsif (@_ >2 ) {
-                $self->{style}{'.$name.'}={@_};
-                return $self;
-            } elsif (defined wantarray) {
-                return wantarray ? %{$self->{style}{'.$name.'}||{}}
-                                 : $self->{style}{'.$name.'};
-            } else {
-                $self->{style}{'.$name.'}={};
-            }
-        }
-        ';
-        $@ and die "$meth:$@\n";
-        goto &$meth;
     } elsif ($meth=~/[^A-Z]/) {
         Carp::confess "Unhandled method/subroutine call $AUTOLOAD";
     }
@@ -3152,30 +3378,34 @@ sub AUTOLOAD {
 
 sub get_lexicals {
     my $cv=shift;
-    
+
+    my ($names,$targs)=closed_over($cv);
+    $names->{$_}=$names->{$targs->{$_}} for keys %$targs;
+    return $names;
+
     my $svo=svref_2object($cv);
     my @pl_array = $svo->PADLIST->ARRAY;
-    
+
     my @name_obj = $pl_array[0]->ARRAY;
-    
+
     my %named;
     for my $i ( 0..$#name_obj ) {
         if ( ref($name_obj[$i])!~/SPECIAL/) {
             $named{$i} = "${ $name_obj[$i]->object_2svref }";
         }
     }
-    
+
     my %inited;
     my %used;
-    walkoptree_filtered( 
+    walkoptree_filtered(
             $svo->ROOT,
-            sub { opgrep { name => [ qw[ padsv padav padhv ] ] }, @_ }, 
-            sub { 
+            sub { opgrep { name => [ qw[ padsv padav padhv ] ] }, @_ },
+            sub {
                 my ( $op, @items )=@_;
                 my $targ = $op->targ;
-                my $name = $named{$targ} 
+                my $name = $named{$targ}
                     or return;
-                
+
                 $inited{$name}++
                     if $op->private & 128;
 
@@ -3187,11 +3417,7 @@ sub get_lexicals {
             }
     );
     return \%used;
-}    
-
-
-
-
+}
 
 package Data::Dump::Streamer::Deparser;
 use B::Deparse;
@@ -3201,21 +3427,21 @@ my %cache;
 sub dds_usenames {
     my $self=shift;
     my $names=shift;
-    $cache{$self}=$names;
+    $cache{Data::Dump::Streamer::refaddr $self}=$names;
 }
 
 sub padname {
     my $self = shift;
     my $targ = shift;
-    if ( $cache{$self} and $cache{$self}{$targ} ) {
-        return $cache{$self}{$targ}
-    } 
+    if ( $cache{Data::Dump::Streamer::refaddr $self} and $cache{Data::Dump::Streamer::refaddr $self}{$targ} ) {
+        return $cache{Data::Dump::Streamer::refaddr $self}{$targ}
+    }
     return $self->padname_sv($targ)->PVX;
 }
 
 sub DESTROY {
     my $self=shift;
-    delete $cache{$self};
+    delete $cache{Data::Dump::Streamer::refaddr $self};
 }
 
 unless (B::AV->can('ARRAYelt')) {
@@ -3235,8 +3461,8 @@ __END__
 
 =head2 Reading the Output
 
-As mentioned in L<Verbose> there is a notation used to make understanding 
-the output easier. However at first glance it can probably be a bit 
+As mentioned in L<Verbose> there is a notation used to make understanding
+the output easier. However at first glance it can probably be a bit
 confusing. Take the following example:
 
     my $x=1;
@@ -3260,48 +3486,48 @@ Which prints (without the comments of course):
     alias_av(@$ARRAY1, 2, $ARRAY1->[1]);  # fix 2
     $ARRAY1->[4] = $ARRAY1->[3];          # fix 3
 
-The first entry, C<< 'R: $ARRAY1->[5]' >> indicates that this slot in the 
-array holds a reference to the currently undefined C<< $ARRAY1->[5] >>, 
-and as such the value will have to be provided later in what the author 
-calls 'fix' statements. The third entry C<< 'A: $ARRAY1->[1]' >> indicates 
-that is element of the array is in fact the exact same scalar as exists in 
-C<< $ARRAY1->[1] >>, or is in other words, an alias to that variable. 
-Again, this cannot be expressed in a single statment and so generates 
-another, different, fix statement. The fifth entry C<< 'V: $ARRAY1->[3]' 
->> indicates that this slots holds a value (actually a reference value) 
-that is identical to one elsewhere, but is currently undefined.  In this 
-case it is because the value it needs is the reference returned by the 
-anonymous array constructer in the fourth element (C<< $ARRAY1->[3] >>). 
-Again this results in yet another different fix statement.  If Verbose() 
-is off then only a 'R' 'A' or 'V' tag is emitted as a marker of some form 
+The first entry, C<< 'R: $ARRAY1->[5]' >> indicates that this slot in the
+array holds a reference to the currently undefined C<< $ARRAY1->[5] >>,
+and as such the value will have to be provided later in what the author
+calls 'fix' statements. The third entry C<< 'A: $ARRAY1->[1]' >> indicates
+that is element of the array is in fact the exact same scalar as exists in
+C<< $ARRAY1->[1] >>, or is in other words, an alias to that variable.
+Again, this cannot be expressed in a single statment and so generates
+another, different, fix statement. The fifth entry C<< 'V: $ARRAY1->[3]' >>
+indicates that this slots holds a value (actually a reference value)
+that is identical to one elsewhere, but is currently undefined.  In this
+case it is because the value it needs is the reference returned by the
+anonymous array constructer in the fourth element (C<< $ARRAY1->[3] >>).
+Again this results in yet another different fix statement.  If Verbose()
+is off then only a 'R' 'A' or 'V' tag is emitted as a marker of some form
 is necessary.
 
-All of this specialized behaviour can be bypassed by setting Purity() to 
-FALSE, in which case the output will look very similar to what 
+All of this specialized behaviour can be bypassed by setting Purity() to
+FALSE, in which case the output will look very similar to what
 Data::Dumper outputs in low Purity setting.
 
 In a later version I'll try to expand this section with more examples.
 
 =head2 A Note About Speed
 
-Data::Dumper is much faster than this module for many things. However IMO 
+Data::Dumper is much faster than this module for many things. However IMO
 it is less readable, and definately less accurate. YMMV.
 
 =head1 EXPORT
 
-By default exports the Dump() command. Or may export on request the same 
-command as Stream(). A Data::Dumper::Dumper compatibility routine is 
-provided via requesting Dumper and access to the real Data::Dumper::Dumper 
-routine is provided via DDumper. The later two are exported together with 
+By default exports the Dump() command. Or may export on request the same
+command as Stream(). A Data::Dumper::Dumper compatibility routine is
+provided via requesting Dumper and access to the real Data::Dumper::Dumper
+routine is provided via DDumper. The later two are exported together with
 the :Dumper tag.
 
-Additionally there are a set of internally used routines that are exposed. 
-These are mostly direct copies of routines from Array::RefElem, 
-Lexical::Alias and Scalar::Util, however some where marked have had their 
-semantics slightly changed, returning defined but false instead of undef 
+Additionally there are a set of internally used routines that are exposed.
+These are mostly direct copies of routines from Array::RefElem,
+Lexical::Alias and Scalar::Util, however some where marked have had their
+semantics slightly changed, returning defined but false instead of undef
 for negative checks, or throwing errors on failure.
 
-The following XS subs (and tagnames for various groupings) are exportable 
+The following XS subs (and tagnames for various groupings) are exportable
 on request.
 
   :Dumper
@@ -3336,7 +3562,7 @@ on request.
      refaddr($var)           #a references address
      refcount($var)          #the number of times a reference is referenced
      sv_refcount($var)       #the number of times a scalar is referenced.
-     weak_refcount($var)     #the number of weakrefs to an object. 
+     weak_refcount($var)     #the number of weakrefs to an object.
                              #sv_refcount($var)-weak_refcount($var) is the true
                              #SvREFCOUNT() of the var.
      looks_like_number($var) #if perl will think this is a number.
@@ -3357,10 +3583,10 @@ on request.
                      #  and all of the XS)
   :bin               # (not Dump() but all of the rest of the XS)
 
-By default exports only the Dump() subroutine. Tags are provided for 
-exporting 'all' subroutines, as well as 'bin' (not Dump()), 'util' (only 
-introspection utilities) and 'alias' for the aliasing utilities. If you 
-need to ensure that you can eval the results (undump) then use the 
+By default exports only the Dump() subroutine. Tags are provided for
+exporting 'all' subroutines, as well as 'bin' (not Dump()), 'util' (only
+introspection utilities) and 'alias' for the aliasing utilities. If you
+need to ensure that you can eval the results (undump) then use the
 'undump' tag.
 
 =head1 BUGS
@@ -3369,8 +3595,8 @@ Code with this many debug statements is certain to have errors. :-)
 
 Please report them with as much of the error output as possible.
 
-Be aware that to a certain extent this module is subject to whimsies of 
-your local perl. The same code may not produce the same dump on two 
+Be aware that to a certain extent this module is subject to whimsies of
+your local perl. The same code may not produce the same dump on two
 different installs and versions. Luckily these dont seem to pop up often.
 
 =head1 AUTHOR AND COPYRIGHT
@@ -3379,23 +3605,23 @@ Yves Orton, E<lt>demerphq at hotmail dot comE<gt>
 
 Copyright (C) 2003-2005 Yves Orton
 
-This library is free software; you can redistribute it and/or modify it 
+This library is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
 
-Contains code derived from works by Gisle Aas, Graham Barr, Jeff Pinyan, 
+Contains code derived from works by Gisle Aas, Graham Barr, Jeff Pinyan,
 Richard Clamp, and Gurusamy Sarathy.
 
 Thanks to Dan Brook, Yitzchak Scott-Thoennes, eric256, Joshua ben Jore,
 Jim Cromie and anybody that I've forgotten for patches and feedback.
 
-=head1 SEE ALSO (its a crowded space, isnt it!)
+=head1 SEE ALSO (its a crowded space, isn't it!)
 
- L<Data::Dumper>		the mother of them all
- L<Data::Dumper::Simple>	source filter interface, basic feature set
- L<Data::Dumper::EasyOO>	easy to use wrapper for DD
- L<Data::Dump>			has cool feature to squeeze data
- L<Data::Dump::Streamer>	highly accurate, evaluable output
- L<Data::TreeDumper>		lots of output options
+ L<Data::Dumper>                the mother of them all
+ L<Data::Dumper::Simple>        source filter interface, basic feature set
+ L<Data::Dumper::EasyOO>        easy to use wrapper for DD
+ L<Data::Dump>                  has cool feature to squeeze data
+ L<Data::Dump::Streamer>        highly accurate, evaluable output
+ L<Data::TreeDumper>            lots of output options
 
 And of course www.perlmonks.org and L<perl> itself.
 
