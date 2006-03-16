@@ -1,3 +1,5 @@
+use ExtUtils::MakeMaker;
+
 sub DDS {
     (my $text=<<'EOF_DDS')=~s/^#//gm; return $text;
 ##This all has to be one line for MakeMaker version scanning.
@@ -12,47 +14,41 @@ sub DDS {
 #
 #  perl -MDDS -e "Dump \%INC"
 #
-#  use DDS;
-#
 #=head1 DESCRIPTION
 #
-#Alias for L<Data::Dump::Streamer|Data::Dump::Streamer>. Look there for details.
-#
+#See L<Data::Dump::Streamer>.
 #
 #=cut
 #
 EOF_DDS
 }
-BEGIN {
-    print "******************************************************\n";
-    print "*** This is  Data::Dump::Streamer. Enjoy!          ***\n";
-    if ($ARGV[0] eq 'DDS' or (-e "./lib/DDS.pm" and $ARGV[0] ne 'NODDS') )
-    {
-        print "***------------------------------------------------***\n";
-        print "*** Will also install DDS as an alias.             ***\n";
-        print "*** Use 'perl Makefile.Pl NODDS' to disable this   ***\n";
-        print "******************************************************\n";
-        open my $ofh,">","./lib/DDS.pm" or die "Failed to open ./lib/DDS.pm:$!";
-        print $ofh DDS();
-        close $ofh;
-        @opts=(realclean => { FILES => './lib/DDS.pm' });
-        shift;
-    } else {
-        shift if $ARGV[0] ne 'NODDS';
-        print "***------------------------------------------------***\n";
-        print "*** use 'perl Makefile.PL DDS [STANDARD OPTS]'     ***\n";
-        print "*** to have a shortcut to Data::Dump::Streamer     ***\n";
-        print "*** called 'DDS' installed as well. Currently it   ***\n";
-        print "*** won't be installed.                            ***\n";
-        print "******************************************************\n";
-        unlink "./lib/DDS.pm";
-    }
+
+print "Installing Data::Dump::Streamer\n";
+my ($override,$value);
+$override= $ARGV[0]=~/^(?:NO)?DDS$/i ? shift @ARGV : undef;
+if ($override) {
+    $value=$override=~/^no/i ? 'no' : 'yes';
+} else {
+    $default= eval("require DDS; 1") || -e("./lib/DDS.pm")
+            ? 'yes' : 'no';
+    print "\n";
+    print "I can install a shortcut so you can use the package 'DDS'\n";
+    print "as though it was 'Data::Dump::Streamer'. This is handy for oneliners.\n\n";
+    $value = prompt("Would you like me to install the shortcut? (yes/no)",
+                   $default);
+}
+if ( $value=~/yes/i )
+{
+    print "Ok, I will also install DDS as an alias.\n";
+    open my $ofh,">","./lib/DDS.pm" or die "Failed to open ./lib/DDS.pm:$!";
+    print $ofh DDS();
+    close $ofh;
+    @opts=(realclean => { FILES => './lib/DDS.pm' });
+} else {
+    unlink "./lib/DDS.pm";
 }
 
-use ExtUtils::MakeMaker;
-
 my $xs_version;
-
 open my $f,'./lib/Data/Dump/Streamer.pm' or die "Failed to open file\n";
 while (<$f>) {
     if (/([\$*])(([\w\:\']*)\bXS_VERSION)\b.*\=/){
@@ -70,9 +66,10 @@ WriteMakefile(
         #'Data::Dumper'    => undef,
         'Text::Balanced'  => 0,
         'Test::More'      => 0,
+        'Text::Abbrev'    => 0,
         'B::Deparse'      => 0,
         'B::Utils'        => 0,
-    },                                         
+    },
     (
         $] >= 5.005
         ?                                      ## Add these new keywords supported since 5.005

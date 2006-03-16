@@ -1,5 +1,5 @@
-use Test::More tests => 41;
-BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump) ); }
+use Test::More tests => 44;
+BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump DumpLex DumpNames) ); }
 use strict;
 use warnings;
 use Data::Dumper;
@@ -440,6 +440,16 @@ EXPECT
 $VAR1 = dualvar( 1245794376, 'JAPH' );
 EXPECT
 
+}
+{
+    my ($x,%y,@z);
+
+    my $res1=Dump($x,\%y,\@z)->Names(qw(*x *y *z))->Out();
+    my $res2=DumpLex($x,\%y,\@z)->Out();
+    my $res3=DumpNames(-x=>$x,-y=>\%y,-z=>\@z)->Out();
+    is($res1,$res2,'DumpLex');
+    is($res1,$res3,'DumpNames');
+    is($res2,$res3,'DumpLex eq DumpNames');
 }
 __END__
 # with eval testing

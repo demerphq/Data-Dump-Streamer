@@ -80,7 +80,7 @@ problems with this and the Freeze/Thaw processing so YMMV. Thanks to [diotalevi]
 from perlmonks for the base implementation of this.
 
 Added support for weakreferences. Under some circumstances weakrefs caused DDS
-to get very confused, and there was no support for recreating weakrefs in the 
+to get very confused, and there was no support for recreating weakrefs in the
 structure. This has been rectified. Its possible that output including weakrefs
 may not eval correctly as the restored data may be missing external references
 that keep the overall data structure alive. For instance if everything in the
@@ -93,16 +93,38 @@ using it as a method more or less DWIM. Also thanks to [diotalevi]
 Added support for dumping the lexical context of CODE refs. Heavily experimental,
 YMMV.
 
-1.12 
+1.12
 
 Dan Brook noticed that closures that referenced closures were not being handled properly
-as the code wasnt iterating into the nested closures. This is fixed now. 
+as the code wasnt iterating into the nested closures. This is fixed now.
 
 1.14
 
 Jim Cromie put together a patch to make aliasing less intrusive. As the term alias was
-fairly heavily used already I changed his 'alias' mechanism to 'as', blame me not him 
+fairly heavily used already I changed his 'alias' mechanism to 'as', blame me not him
 for the silly name. Also includes a few minor fixes, and a little bit of pod cleanup.
 
+2.00
+
+*WARNING* Interface change!!
+
+This release is interface incompatible with earlier releases.
+
+The whole framework for overriding how objects and classes are represented
+has been changed, hopefully, to be more intuitive and easier to use.
+
+All of the previous Freeze related functionality has been replaced by the
+new Freezer() method and interface. There is now support for class
+authors to add a DDS_freeze() method to control serialization and
+deserialization.
+
+HashKeys has had an interface change and has been renamed to KeyOrder.
+HashKeys() is still maintained but undocumented at this time.
+
+Added more documentation.
+
+Added support for Padwalker functionality that Robin Housten implemented.
+
+Long quoted strings are now split to be easier to read.
 
 
