@@ -69,6 +69,7 @@ WriteMakefile(
         'Text::Abbrev'    => 0,
         'B::Deparse'      => 0,
         'B::Utils'        => 0,
+        # recommends: 'PadWalker'       => 1,
     },
     (
         $] >= 5.005
