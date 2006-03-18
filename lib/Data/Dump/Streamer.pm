@@ -8,7 +8,7 @@ use B::Deparse;
 use B qw(svref_2object);
 use B::Utils qw(walkoptree_filtered opgrep);
 use IO::File;
-use PadWalker qw(closed_over peek_my);
+
 use Data::Dumper ();
 use Data::Dump::Streamer::_::Printers;
 use Symbol;
@@ -16,7 +16,6 @@ use Text::Abbrev qw(abbrev);
 # use overload qw("" printit); # does diabolical stuff.
 use warnings;
 use warnings::register;
-
 
 require overload;
 use vars qw(
@@ -28,21 +27,22 @@ use vars qw(
              %Freeze
              %Thaw
              $DEBUG
+             $HasPadWalker
            );
 
 $DEBUG=0;
+BEGIN{ $HasPadWalker=eval "use PadWalker 0.99; 1"; }
 
 BEGIN {
-    $VERSION   ='2.00';
-    $XS_VERSION='2.00';
+    $VERSION   ='2.01';
+    $XS_VERSION='2.01';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
-
-    @EXPORT=qw(Dump DumpLex DumpNames);
+    @EXPORT=qw(Dump DumpLex DumpVars);
     @EXPORT_OK = qw(
         Dump
         DumpLex
-        DumpNames
+        DumpVars
         Stream
         alias_av
         alias_hv
@@ -593,6 +593,13 @@ pollution of the previous method.
 You can use any alias you like, but that doesn't mean you should.. Folks
 doing as => 'DBI' will be mercilessly ridiculed.
 
+=head2 PadWalker support
+
+If PadWalker 1.0 is installed you can use DumpLex() to automatically
+determine the names of any lexicals being dumped. Padwalker will
+also be used instead of the B:: modules when dumping closures if
+it is available.
+
 =head1 INTERFACE
 
 =head2 Data::Dumper Compatibility
@@ -640,6 +647,9 @@ sub new {
     my $self = bless {
         style => {
             hashsep      => ' => ',    # use this to seperate key vals
+            #arysep       => ', ',
+            optspace     => ' ',
+
             bless        => 'bless()', # use this to bless ojects, needs fixing
             indent       => 2,    # should we indent at all?
             indentkeys   => 1,         # indent keys
@@ -1084,19 +1094,51 @@ sub Dump {
     }
 }
 
+
+=item DumpLex VALUES
+
+DumpLex is similar to Dump except it will try to automatically
+determine the names to use for the variables being dumped by
+using PadWalker to have a poke around the calling scope. If the
+values being dumped are lexicals (ie declared with a my) then
+PadWalker will be able to tell what their name is. If a var
+can't be named then it will be named according to the normal
+scheme. When PadWalker isn't installed this is just a wrapper
+for L<Dump()|Dump>.
+
+Thanks to Ovid for the idea of this. See L<Data::Dumper::Simple>
+for a similar wrapper around Data::Dumper.
+
+=cut
+
+
 sub DumpLex {
+    if ( ! $HasPadWalker ) {
+        #warn( "Can't use DumpLex without ".
+        #    "PadWalker v1.0 or later installed.");
+        goto &Dump;
+    }
     my $obj;
     if ( blessed($_[0]) and blessed($_[0]) eq __PACKAGE__ ) {
         $obj=shift;
     }
-    my $pad = peek_my(1);
-    my %pad_vars;
-    while (my ($var,$ref) = each %$pad) {
-        $pad_vars{ refaddr $ref } = $var;
-    }
     my @names;
-    my $varcount = 1;
+    # = map {
+    #        PadWalker::var_name(1,\$_)
+    #        || PadWalker::var_name(1,\$_)
+    #        (ref $_ && PadWalker::var_name(1,$_));
+    #                $str
+    #          } @_;
+    #if ( !@names && @_ ) {
 
+    my %pad_vars;
+    foreach my $pad ( PadWalker::peek_my(1),
+        PadWalker::peek_our(1)
+    ){
+        while (my ($var,$ref) = each %$pad) {
+            $pad_vars{ refaddr $ref } ||= $var;
+        }
+    }
     foreach (@_) {
         my $name;
         INNER:foreach ( \$_, $_ ) {
@@ -1116,10 +1158,25 @@ sub DumpLex {
     }
 }
 
-sub DumpNames {
+=item DumpVars PAIRS
+
+This is wrapper around L<Dump()|Dump> which expect to receive
+a list of name=>value pairs instead of a list of values.
+Otherwise behaves like L<Dump()|Dump>. Note that names starting
+with a '-' are treated the same as those starting with '*' when
+passed to L<Names()|Names>.
+
+=cut
+
+
+sub DumpVars {
     my $obj;
     if ( blessed($_[0]) and blessed($_[0]) eq __PACKAGE__ ) {
         $obj=shift;
+    }
+    if (@_ % 2) {
+        warnings::warnif "Odd number of arguments in DumpVars";
+        pop @_;
     }
     my @names;
     my @args;
@@ -1490,13 +1547,10 @@ PASS:{
             } elsif ($reftype eq 'CODE') {
                 if ($pass == 1) {
 
-                    my $used=get_lexicals($item);
-                    #my ($used,$targs)= closed_over($item);
+                    my $used=_get_lexicals($item);
 
                     foreach my $name (keys %$used) {
-
                         next unless $name=~/\D/;
-
                         my $addr=refaddr($used->{$name});
                         if ( !$lex_addr{$addr} ) {
                             $lex_addr{$addr}=$used->{$name};
@@ -1988,7 +2042,7 @@ sub _dump_sv {
 
     $name||=$self->{svn}[$idx];
     (my $clean_name=$name)=~s/^[\@\%\&](\w+)/\$${1}_/; # XXX
-
+    my $optspace=$self->{style}{optspace};
     if ($idx) {
 
         # Its a monitored scalar.
@@ -2037,7 +2091,7 @@ sub _dump_sv {
                     } else {
                         my $need_do=($name=~/^\$\$\$+/);
                         if ($need_do) {
-                            $str.='do{my $f=';
+                            $str.=join($optspace,qw( do { my $f = ),'');
                         }
 
                         $str.=!$self->{style}{verbose}
@@ -2046,7 +2100,7 @@ sub _dump_sv {
                         $ret=\do{my $nope=0};
                         $self->_add_fix('sv',$name,$idx,$ret);
 
-                        $str.="}" if ($need_do)
+                        $str.="$optspace}" if ($need_do)
                     }
                 }
             } else {
@@ -2109,8 +2163,8 @@ sub _dump_sv {
         unless ($name=~/^\&/) { # XXX
             my $str=(($self->{style}{declare} && $name!~/^\*/
                      && !$self->{lexicals}{added}{$name}
-                     ) ? "my " : ""
-                     )."$name = ";
+                     ) ? "my$optspace" : ""
+                     )."$name$optspace=$optspace";
             $self->{fh}->print($str);
             $indent=length($str);
             $self->{buf}=0;
@@ -2133,7 +2187,7 @@ sub _dump_sv {
 
     if ($add_do) {
         #warn "\n!$ro && $is_ref && !blessed($_[1]) && !$glob";
-        $self->{fh}->print('do { my $v = ');
+        $self->{fh}->print(join $optspace,qw(do { my $v = ),'');
         $self->{buf}+=13;
     }
 
@@ -2145,7 +2199,7 @@ sub _dump_sv {
         } else {
             my $is_ro=($self->{style}{ro} && $ro && !$is_ref);
             if ($is_ro and !$self->{style}{purity}) {
-                $self->{fh}->print("make_ro( ");
+                $self->{fh}->print("make_ro($optspace");
             }
             if ($glob) {
                 if ($glob=~/^\*Symbol::GEN/) {
@@ -2164,7 +2218,7 @@ sub _dump_sv {
                 if ($self->{style}{dualvars}) {
                     no warnings 'numeric';
                     if (_could_be_dualvar($item) && 0+$item ne $item && "$item" != $item ) {
-                        $quoted="dualvar( ".join(", ",0+$item,_quote("$item"))." )";
+                        $quoted="dualvar( ".join(",$optspace",0+$item,_quote("$item"))."$optspace)";
                     }
                 }
                 $quoted=_quote($item) if !$quoted;
@@ -2176,7 +2230,7 @@ sub _dump_sv {
             if ($is_ro && $self->{style}{purity}) {
                 $self->_add_fix('sub call','make_ro',$name);
             } elsif ($is_ro) {
-                $self->{fh}->print(' )');
+                $self->{fh}->print("$optspace)");
             }
             #return
         }
@@ -2185,7 +2239,7 @@ sub _dump_sv {
         $self->{do_nl}=1;
         $self->_dump_rv($item,$depth+1,$dumped,$name,$indent,$is_ref && !$add_do);
     }
-    $self->{fh}->print(' }')
+    $self->{fh}->print("$optspace}")
             if $add_do;
     $self->_add_fix('sub call','weaken',$name)
             if $self->{svw}{$addr};
@@ -2197,7 +2251,7 @@ sub _brace {
     my $open=$type=~/[\{\[\(]/;
 
     my $brace=$name !~ /^[%@]/ ? $type : $type =~ /[\{\[\(]/ ? '(' : ')';
-    $child=$child ? " " : "";
+    $child=$child ? $self->{style}{optspace} : "";
     if ($cond) {
         $_[-2]+=$open ? $self->{style}{indentcols} : -$self->{style}{indentcols};
         $self->{fh}->print($open ? "" : "\n".(" " x $_[-2]),
@@ -2327,13 +2381,19 @@ sub _dump_hash {
     my ($kc,$ix)=(0,0);
     my $last_n=0;
     my $ind_str=" " x $indent;
+    my $optspace=$self->{style}{optspace};
     while (defined(my $k=defined $keyary ? $keyary->[$ix++] : each %$item)) {
        $last_n=0 if ref $item->{$k};
         if ( $kc ) {
             my $do_ind=$ind && !$last_n ;
-            $self->{fh}->print(",", $do_ind ? "\n$ind_str" : " ");
+            $self->{fh}->print(",", $do_ind ? "\n$ind_str" : $optspace);
             $self->{buf}++;
-            $self->{buf}=0 if $do_ind;
+            if ($do_ind) {
+                $self->{buf}=0;
+            } elsif (!$do_ind && !$optspace && $self->{buf} > 1024 ) {
+                $self->{fh}->print("\n");
+                $self->{buf}=0;
+            }
         } else {
             #$self->{fh}->print("\n$ind_str") if !$last_n;
             $kc=1;
@@ -2382,12 +2442,20 @@ sub _dump_array {
     $self->_brace($name,'[',$ind,$indent,scalar @$item);
     my $last_n=0;
     my $ind_str=(" " x $indent);
+    my $optspace=$self->{style}{optspace};
     unless ($self->{style}{rle} ) {
         foreach my $k (0..$#$item) {
             my $do_ind=$ind && (!$last_n || ref $item->[$k]);
-            $self->{fh}->print(",", $do_ind ? "\n$ind_str" : " ")
-                if $k;
-            $self->{buf}=0 if $do_ind and $k;
+            if ($k) {
+                $self->{fh}->print(",", $do_ind ? "\n$ind_str" : $optspace);
+                if ($do_ind) {
+                    $self->{buf}=0;
+                } elsif (!$do_ind && !$optspace && $self->{buf} > 1024 ) {
+                    $self->{fh}->print("\n");
+                    $self->{buf}=0;
+                }
+            }
+
 
             my $alias=$self->_dump_sv($item->[$k],$depth+1,$dumped,
                                 $self->_build_name($name,'[',$k),
@@ -2444,11 +2512,11 @@ sub _dump_array {
             }
 
             my $do_ind=$ind && (!$last_n || ref $item->[$k]);
-            $self->{fh}->print(",", $do_ind ? "\n$ind_str" : " ")
+            $self->{fh}->print(",", $do_ind ? "\n$ind_str" : $optspace)
                 if $k;
             $self->{buf}=0 if $do_ind and $k;
             if ($count>1){
-                $self->{fh}->print("( ");
+                $self->{fh}->print("($optspace");
                 $self->{buf}+=2;
             }
             my $alias=$self->_dump_sv($item->[$k],$depth+1,$dumped,
@@ -2468,7 +2536,7 @@ sub _dump_array {
                 );
             }
             if ($count>1) {
-                my $str=" ) x $count";
+                my $str="$optspace)${optspace}x${optspace}$count";
                 $self->{buf}+=length($str);
                 $self->{fh}->print($str);
             }
@@ -2508,7 +2576,7 @@ sub _dump_code {
 
         my $deparser=Data::Dump::Streamer::Deparser->new(@{$self->{style}{deparseopts}});
 
-        my $used= get_lexicals($item);
+        my $used= _get_lexicals($item);
         my %targ;
         foreach my $targ (keys %$used) {
             next if $targ=~/\D/;
@@ -2654,6 +2722,7 @@ sub _dump_rv {
         # this should only happen for localized globs.
         ($idx)=$self->_reg_ref($item,$depth,$name,refcount($item));
     }
+    my $optspace=$self->{style}{optspace};
     if ($idx) {
         my $pre_dumped=$self->{refdu}[$idx];
         my $str="";
@@ -2665,9 +2734,9 @@ sub _dump_rv {
                     my @hidden_keys=sort(hidden_keys(%$item));
                     $self->_add_fix('lock',$idx,\@hidden_keys);
                 }
-                $str=join "",($class ? 'bless( ' : ''),
+                $str=join "",($class ? "bless($optspace" : ''),
                                    '\\'.$self->{refn}[$idx],
-                                   ($class ? ', '._quote($class).' )' : '');
+                                   ($class ? ",$optspace"._quote($class)."$optspace)" : '');
             } else {
                 $str=$self->{refn}[$idx];
             }
@@ -2680,14 +2749,14 @@ sub _dump_rv {
             # output a place holder and add a fix statement
             # XXX is this sigil test correct? why not $?
             if ($self->{refn}[$idx]=~/^[\@\%\&]/ and (!$self->{style}{declare})) {
-                $str=join"",( $class ? 'bless( ' : '' ),
+                $str=join"",( $class ? "bless($optspace" : '' ),
                                '\\'.$self->{refn}[$idx],
-                               ( $class ? ', '._quote($class).' )' : '' );
+                               ( $class ? ",$optspace"._quote($class)."$optspace)" : '' );
             } else {
                 if ($self->{style}{purity}) {
-                    $str=join"",$add_do ? 'do { my $v = ' : '',
+                    $str=join"",$add_do ? join($optspace,qw(do { my $v = ),'') : '',
                         !$self->{style}{verbose} ? "'V'" : _quote("V: ",$self->{refn}[$idx]),
-                        $add_do ? ' }' : '';
+                        $add_do ? $optspace."}" : '';
 
                     #Carp::cluck "$name $self->{refd}[$idx] < $depth" if $name=~/\*/;
                     $self->_add_fix('ref',$name,$idx,$class);
@@ -2721,7 +2790,7 @@ sub _dump_rv {
         }
         if ($inline && $thawtype eq 'sub') {
             $self->{buf}+=length($thaw)+1;
-            $self->{fh}->print($thaw."( ");
+            $self->{fh}->print($thaw."(${optspace}");
         }
     }
     $self->{do_nl}=1;
@@ -2736,7 +2805,7 @@ sub _dump_rv {
         } else  {
             $self->{fh}->print("lock_ref_keys",
                            @hidden_keys ? '_plus' : '',
-                           '( '
+                           "(${optspace}"
                           );
         }
     }
@@ -2744,7 +2813,7 @@ sub _dump_rv {
 
     my $add_bless=defined($class) && ($name!~/^[\@\%\&]/);
     if ($add_bless && !$overloaded) {
-        $self->{fh}->print(substr($self->{style}{bless},0,-1)," ");
+        $self->{fh}->print(substr($self->{style}{bless},0,-1),$optspace);
     }
 
     $DEBUG and print "  $type : Start typecheck\n";
@@ -2777,7 +2846,7 @@ sub _dump_rv {
     }
     if ($add_bless) {
         unless ( defined $overloaded ) {
-            $self->{fh}->print(", ",_quote($class)," ",substr($self->{style}{bless},-1))
+            $self->{fh}->print(",${optspace}",_quote($class),$optspace,substr($self->{style}{bless},-1))
         } else {
             $self->_add_fix('bless',$idx,$overloaded);
         }
@@ -2790,14 +2859,14 @@ sub _dump_rv {
     }
     if ($add_lock) {
         if (@hidden_keys) {
-            $self->{fh}->print(", ",join(", ",map {_quote($_)} @hidden_keys));
+            $self->{fh}->print(",${optspace}",join(",${optspace}",map {_quote($_)} @hidden_keys));
         }
-        $self->{fh}->print(" )");
+        $self->{fh}->print("${optspace})");
     }
     if ( $thaw ) {
         if ($inline) {
             if ($thawtype eq 'sub') {
-                $self->{fh}->print(" )");
+                $self->{fh}->print("${optspace})");
             } elsif ($thawtype eq 'method') {
                 $self->{fh}->print("->$thaw()");
             }
@@ -2846,10 +2915,14 @@ sub Names {
     my $self = shift->_safe_self;
     if (@_) {
         my $v=(@_==1 and reftype $_[0] eq 'ARRAY') ? shift @_ : \@_;
-        $self->{unames} = [ map { ( my $s = $_ ) =~ s/^[\@\%\&\$-]/*/;
-                                    Carp::confess "Bad name '$_'" if $s!~/^\*?\w+$/;
-                                    $s
-                                } @$v ];
+        $self->{unames} = [
+            map {
+                ( my $s = $_ ) =~ s/^[\@\%\&-]/*/;
+                $s=~s/^\$//;
+                Carp::confess "Bad name '$_'"
+                   if $s && $s!~/^\*?\w+$/;
+                $s
+            } @$v ];
         return $self;
     } elsif (! defined wantarray ) {
         $self->{unames}=[];
@@ -2924,8 +2997,31 @@ any time.
 
 Defaults to False.
 
-=for UEDIT
-sub Indent      {}
+=cut
+
+sub Indent {
+    my $self=shift->_safe_self();
+    if (@_) {
+        my $val=shift;
+        $self->{style}{indent}=$val;
+        if ( $val == 0 ) {
+            $self->{style}{optspace}= "";
+            for ($self->{style}{hashsep}) {
+                s/^\s+//;
+                s/\s+$//;
+            }
+        } else {
+            $self->{style}{optspace}= " ";
+            for ($self->{style}{hashsep}) {
+                s/^\s*/ /;
+                s/\s*$/ /;
+            }
+        }
+        return $self
+    } else {
+        return $self->{style}{indent}
+    }
+}
 
 =item Indent
 
@@ -3376,12 +3472,18 @@ sub AUTOLOAD {
     }
 }
 
-sub get_lexicals {
+sub _get_lexicals {
     my $cv=shift;
 
-    my ($names,$targs)=closed_over($cv);
-    $names->{$_}=$names->{$targs->{$_}} for keys %$targs;
-    return $names;
+    if ($HasPadWalker) {
+        my ($names,$targs)=PadWalker::closed_over($cv);
+        if ($PadWalker::VERSION < 1) {
+            $names->{$_}=$names->{$targs->{$_}} for keys %$targs;
+        } else {
+            %$names=(%$names,%$targs);
+        }
+        return $names;
+    }
 
     my $svo=svref_2object($cv);
     my @pl_array = $svo->PADLIST->ARRAY;
@@ -3583,11 +3685,12 @@ on request.
                      #  and all of the XS)
   :bin               # (not Dump() but all of the rest of the XS)
 
-By default exports only the Dump() subroutine. Tags are provided for
-exporting 'all' subroutines, as well as 'bin' (not Dump()), 'util' (only
-introspection utilities) and 'alias' for the aliasing utilities. If you
-need to ensure that you can eval the results (undump) then use the
-'undump' tag.
+
+By default exports only Dump(), DumpLex() and DumpVars(). Tags are
+provided for exporting 'all' subroutines, as well as 'bin' (not Dump()),
+'util' (only introspection utilities) and 'alias' for the aliasing
+utilities. If you need to ensure that you can eval the results (undump)
+then use the 'undump' tag.
 
 =head1 BUGS
 
@@ -3601,7 +3704,7 @@ different installs and versions. Luckily these dont seem to pop up often.
 
 =head1 AUTHOR AND COPYRIGHT
 
-Yves Orton, E<lt>demerphq at hotmail dot comE<gt>
+Yves Orton, yves at cpan org.
 
 Copyright (C) 2003-2005 Yves Orton
 
@@ -3612,12 +3715,14 @@ Contains code derived from works by Gisle Aas, Graham Barr, Jeff Pinyan,
 Richard Clamp, and Gurusamy Sarathy.
 
 Thanks to Dan Brook, Yitzchak Scott-Thoennes, eric256, Joshua ben Jore,
-Jim Cromie and anybody that I've forgotten for patches and feedback.
+Jim Cromie, Curtis "Ovid" Poe and anybody that I've forgotten for patches,
+feedback and ideas.
 
 =head1 SEE ALSO (its a crowded space, isn't it!)
 
  L<Data::Dumper>                the mother of them all
  L<Data::Dumper::Simple>        source filter interface, basic feature set
+ L<Data::Dumper::Names>         Named vars without sourcefiltering.
  L<Data::Dumper::EasyOO>        easy to use wrapper for DD
  L<Data::Dump>                  has cool feature to squeeze data
  L<Data::Dump::Streamer>        highly accurate, evaluable output

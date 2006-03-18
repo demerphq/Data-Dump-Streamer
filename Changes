@@ -127,4 +127,12 @@ Added support for Padwalker functionality that Robin Housten implemented.
 
 Long quoted strings are now split to be easier to read.
 
+2.01
+
+Bug fixes, documentation patches and a few more tests.
+
+DumpNames() renamed to DumpVars().
+
+This fixes test failures that were coming from lexicals.t
+
 

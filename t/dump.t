@@ -1,5 +1,5 @@
-use Test::More tests => 44;
-BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump DumpLex DumpNames) ); }
+use Test::More tests => 45;
+BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump DumpLex DumpVars) ); }
 use strict;
 use warnings;
 use Data::Dumper;
@@ -133,7 +133,7 @@ my $REF2 = \\$REF1;
 EXPECT
     same( "Many Refs Declare ( \$y, \$x ) 2", $o->Declare(1),
          <<'EXPECT', ( $y,$x ) );
-my $REF1 = \do{my $f='R: $REF2'};
+my $REF1 = \do { my $f = 'R: $REF2' };
 my $REF2 = \\'foo';
 $$REF1 = \$REF2;
 EXPECT
@@ -160,7 +160,7 @@ my $REF2 = \\\$REF1;
 EXPECT
     same( "Many Refs Declare ( \$y, \$x ) 3", $o->Declare(1),
          <<'EXPECT', ( $y,$x ) );
-my $REF1 = \\do{my $f='R: $REF2'};
+my $REF1 = \\do { my $f = 'R: $REF2' };
 my $REF2 = \\\'foo';
 $$$REF1 = \$REF2;
 EXPECT
@@ -188,7 +188,7 @@ $ARRAY1 = [
 EXPECT
 
     same( "Rle(1) Tight", $o->Verbose(0)->Indent(0)->Rle(1), <<'EXPECT', ( $x ) );
-$A1 = [ ( 1 ) x 4, 0, ( 1 ) x 4 ];
+$A1=[(1)x4,0,(1)x4];
 EXPECT
     same( "Rle(1)", $o->Verbose(1)->Indent(2)->Rle(1), <<'EXPECT', ( $x ) );
 $ARRAY1 = [
@@ -244,7 +244,7 @@ $HASH1 = {
          };
 EXPECT
     same( "Indent(0)", $o->Indent(0), <<'EXPECT', ( $x ) );
-$HASH1 = { array => [ 0, 1, 2, 3, 4, 5 ], hash => { 0 => 1, 2 => 3, 4 => 5 }, object => bless( \do { my $v = 'Foo!' }, 'Bar' ), regex => qr/(?:baz)/ };
+$HASH1={array=>[0,1,2,3,4,5],hash=>{0=>1,2=>3,4=>5},object=>bless(\do{my$v='Foo!'},'Bar'),regex=>qr/(?:baz)/};
 EXPECT
     same( "IndentCols(0)", $o->Indent(2)->IndentCols(0), <<'EXPECT', ( $x ) );
 $HASH1 = {
@@ -443,13 +443,22 @@ EXPECT
 }
 {
     my ($x,%y,@z);
-
-    my $res1=Dump($x,\%y,\@z)->Names(qw(*x *y *z))->Out();
-    my $res2=DumpLex($x,\%y,\@z)->Out();
-    my $res3=DumpNames(-x=>$x,-y=>\%y,-z=>\@z)->Out();
-    is($res1,$res2,'DumpLex');
-    is($res1,$res3,'DumpNames');
-    is($res2,$res3,'DumpLex eq DumpNames');
+    $x=\@z;
+    our $global=\@z;
+    my $res1=Dump($x,\%y,\@z)->Names(qw(x *y *z))->Out();
+    my $res3=DumpVars(x=>$x,-y=>\%y,-z=>\@z)->Out();
+    is($res1,$res3,'DumpVars');
+    SKIP: {
+      skip "needs PadWalker 0.99 or later", 3
+        if !eval "use PadWalker 0.99; 1";
+        my $res2=DumpLex($x,\%y,\@z)->Out();
+        is($res1,$res2,'DumpLex');
+        is($res2,$res3,'DumpLex eq DumpVars');
+        is("".DumpLex($x,$global)->Out(),<<'EXPECT','DumpLex w/global');
+$x = [];
+$global = $x;
+EXPECT
+    }
 }
 __END__
 # with eval testing
