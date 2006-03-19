@@ -6,7 +6,7 @@ use Test::More tests => 14;
 (my $helper=$0)=~s/\w+\.\w+$/test_helper.pl/;
 require $helper;
 diag "\nPadWalker ",
-    eval "use PadWalker 0.99; qq($PadWalker::VERSION is)"||"isn't",
+    eval "use PadWalker 0.99; 1" ? qq($PadWalker::VERSION is) : "isn't",
     " installed";
 
 $::No_Redump=$::No_Redump=1;
