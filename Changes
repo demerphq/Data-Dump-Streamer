@@ -135,4 +135,13 @@ DumpNames() renamed to DumpVars().
 
 This fixes test failures that were coming from lexicals.t
 
+2.02
 
+Added OptSpace() which can be used to control optional whitespace.
+Indent(0) automatically disables optional whitespace.
+
+String compression support has been provided. Use Compress()
+to specify how long a string should be before it is compressed.
+Use Compressor() to supply a callback to handle the compression.
+
+More tests, better documentation.

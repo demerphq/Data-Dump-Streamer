@@ -1,4 +1,4 @@
-use Test::More tests => 45;
+use Test::More tests => 47;
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump DumpLex DumpVars) ); }
 use strict;
 use warnings;
@@ -460,6 +460,30 @@ $global = $x;
 EXPECT
     }
 }
+ SKIP: {
+      skip "needs Compress::Zlib and MIME::Base64", 2
+        if !eval "use Compress::Zlib; use MIME::Base64; 1";
+    my $str="a" x 1000;
+    my $i=bless \$str,"Fnorble";
+    my $rep=MIME::Base64::encode(Compress::Zlib::compress($str,9),"");
+
+    $o->Compress(-1);
+    my $out=$o->Data($i)->Out();
+    (my $expect=<<'EXPECT')=~s/XXX/$rep/;
+use Data::Dump::Streamer qw(usqz);
+$Fnorble1 = bless( \do { my $v = usqz('XXX') }, 'Fnorble' );
+EXPECT
+    is($out,$expect,"Compress literal");
+
+    $o->OptSpace("");
+    $out=$o->Data($i)->Out();
+    ($expect=<<'EXPECT')=~s/XXX/$rep/;
+use Data::Dump::Streamer qw(usqz);
+$Fnorble1=bless(\do{my$v=usqz('XXX')},'Fnorble');
+EXPECT
+    is($out,$expect,"Optspace");
+}
+
 __END__
 # with eval testing
 {

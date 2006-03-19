@@ -34,7 +34,7 @@ $DEBUG=0;
 BEGIN{ $HasPadWalker=eval "use PadWalker 0.99; 1"; }
 
 BEGIN {
-    $VERSION   ='2.01';
+    $VERSION   ='2.02';
     $XS_VERSION='2.01';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
@@ -86,6 +86,8 @@ BEGIN {
         DDumper
 
         alias
+        sqz
+        usqz
    );
 
     %EXPORT_TAGS = (
@@ -97,6 +99,7 @@ BEGIN {
                         alias_to
                         dualvar
                         weaken
+                        usqz
                       )
                   ],
         special=> [ qw( readonly_set ) ],
@@ -595,10 +598,11 @@ doing as => 'DBI' will be mercilessly ridiculed.
 
 =head2 PadWalker support
 
-If PadWalker 1.0 is installed you can use DumpLex() to automatically
-determine the names of any lexicals being dumped. Padwalker will
-also be used instead of the B:: modules when dumping closures if
-it is available.
+If PadWalker 1.0 is installed you can use DumpLex() to try to
+automatically determine the names of the vars being dumped. As
+long as the vars being dumped have my or our declarations in scope
+the vars will be correctly named. Padwalker will also be used
+instead of the B:: modules when dumping closures when it is available.
 
 =head1 INTERFACE
 
@@ -642,15 +646,26 @@ See C<Dump()> for a better way to do things.
 
 =cut
 
+sub _compressor {
+    return "use Data::Dump::Streamer qw(usqz);\n"
+        if !@_;
+    return sqz($_[0], "usqz('", "')" );
+}
+
 sub new {
     my $class = shift;
     my $self = bless {
         style => {
-            hashsep      => ' => ',    # use this to seperate key vals
-            #arysep       => ', ',
+            hashsep      => '=>',    # use this to seperate key vals
+            arysep       => ',',
+            pairsep      => ',',
             optspace     => ' ',
-
             bless        => 'bless()', # use this to bless ojects, needs fixing
+
+            compress     => 0, # if nonzero use compressor to compress strings
+                               # longer than this value.
+            compressor   => \&_compressor,
+
             indent       => 2,    # should we indent at all?
             indentkeys   => 1,         # indent keys
             declare      => 0,         # predeclare vars? allows refs to root vars if 0
@@ -660,7 +675,7 @@ sub new {
             deparseglob  => 1,
             deparse      => 1,         # deparse code refs?
             freezer      => 'DDS_freeze',        # default freezer
-            freeze_class  => {},        # freeze classes
+            freeze_class => {},        # freeze classes
 
             rle          => 1,         # run length encode arrays
             ignore       => {},        # ignore classes
@@ -676,9 +691,7 @@ sub new {
             formatstub   => 'do{ local *F; eval "format F =\nFormat Stub\n.\n"; *F{FORMAT} }',
             # use these opts if deparse is 1
             deparseopts  => ["-sCi2v'Useless const omitted'"],
-            special     =>0,
-
-
+            special      => 0,
 
             # not yet implemented
             array_warn  => 10_000,    # warn if an array has more than this number of elements
@@ -687,10 +700,10 @@ sub new {
             smart_array => 1,         # special handling of very large arrays
                                       # with hashes as their 0 index. (pseudo-hash error detection)
         },
-        debug=>0,
+        debug => 0,
         cataloged => 0,
-        ref_id =>0,
-        sv_id =>0
+        ref_id => 0,
+        sv_id => 0
     }, $class;
 
     return $self;
@@ -1097,17 +1110,15 @@ sub Dump {
 
 =item DumpLex VALUES
 
-DumpLex is similar to Dump except it will try to automatically
-determine the names to use for the variables being dumped by
-using PadWalker to have a poke around the calling scope. If the
-values being dumped are lexicals (ie declared with a my) then
-PadWalker will be able to tell what their name is. If a var
-can't be named then it will be named according to the normal
-scheme. When PadWalker isn't installed this is just a wrapper
-for L<Dump()|Dump>.
+DumpLex is similar to Dump except it will try to automatically determine
+the names to use for the variables being dumped by using PadWalker to
+have a poke around the calling lexical scope to see what is declared. If
+a name for a var can't be found then it will be named according to the
+normal scheme. When PadWalker isn't installed this is just a wrapper for
+L<Dump()|Dump>.
 
-Thanks to Ovid for the idea of this. See L<Data::Dumper::Simple>
-for a similar wrapper around Data::Dumper.
+Thanks to Ovid for the idea of this. See L<Data::Dumper::Simple> for a
+similar wrapper around L<Data::Dumper>.
 
 =cut
 
@@ -1993,6 +2004,11 @@ sub Out {
         warn DDumper(\@items) if $DEBUG;
     }
 
+    if ($self->{style}{compress} && $self->{style}{compressor}) {
+        my $prelude=$self->{style}{compressor}->();
+        $self->{fh}->print($prelude) if $prelude;
+    }
+
     $self->{fh}->print("my (",join(",",sort keys %{$self->{lexicals}{added}}),");\n")
         if $self->{lexicals}{added};
 
@@ -2020,6 +2036,7 @@ sub Out {
 
 }
 
+
 sub print_token {
     my ($self, $str)=@_;
     $self->{fh}->print($str);
@@ -2028,6 +2045,27 @@ sub print_quoted {
     my ( $self, $str )=@_;
     $self->{fh}->print($str);
 }
+
+# sqz(str,begin,end)
+sub sqz {
+    require Compress::Zlib;
+    require MIME::Base64;
+    my $res= Compress::Zlib::compress($_[0],9);
+    return $_[1]
+          ? $_[1]
+            . MIME::Base64::encode($res,"")
+            . $_[2]
+          : MIME::Base64::encode($res,"");
+}
+
+# usqz(str)
+sub usqz {
+    return Compress::Zlib::uncompress(
+            MIME::Base64::decode($_[0])
+           );
+}
+
+
 
 sub _dump_sv {
     my ($self,$item,$depth,$dumped,$name,$indent,$is_ref)=@_;
@@ -2221,8 +2259,20 @@ sub _dump_sv {
                         $quoted="dualvar( ".join(",$optspace",0+$item,_quote("$item"))."$optspace)";
                     }
                 }
-                $quoted=_quote($item) if !$quoted;
+                # XXX main scalar output here!
+                if ( ! $quoted ) {
+                    my $style= $self->{style};
 
+                    if ( $style->{compress} &&
+                        $style->{compressor} &&
+                        length($_[1]) > $style->{compress}
+                    ){
+                        $quoted= $style->{compressor}->($_[1],$self);
+                    } else {
+                        $quoted=_quote($item);
+                    }
+
+                }
                 $self->{buf}+=length($quoted);
                 $self->{buf}=length($1) if $quoted=~/\n([^\n]*)\s*\z/;
                 $self->{fh}->print($quoted); #;
@@ -2250,10 +2300,15 @@ sub _brace {
     my ($self,$name,$type,$cond,$indent,$child)=@_;
     my $open=$type=~/[\{\[\(]/;
 
-    my $brace=$name !~ /^[%@]/ ? $type : $type =~ /[\{\[\(]/ ? '(' : ')';
-    $child=$child ? $self->{style}{optspace} : "";
-    if ($cond) {
-        $_[-2]+=$open ? $self->{style}{indentcols} : -$self->{style}{indentcols};
+    my $brace= $name !~ /^[%@]/
+             ? $type
+             : $type =~ /[\{\[\(]/
+                ? '('
+                : ')';
+    $child= $child ? $self->{style}{optspace} : "";
+    if ( $cond ) {
+        $_[-2] += $open ? $self->{style}{indentcols}
+                        : -$self->{style}{indentcols};
         $self->{fh}->print($open ? "" : "\n".(" " x $_[-2]),
                            $brace,
                            $open ? "\n".(" " x $_[-2]) : "");
@@ -2372,21 +2427,24 @@ sub _dump_hash {
 
     my $indkey=($ind && $self->{style}{indentkeys}) ? $self->{ref_hklen}{$addr} : 0;
 
-    my $cindent=$indent;
-    my $sep=$self->{style}{hashsep};
+    my $cindent= $indent;
+    my $style= $self->{style};
+    my $optspace= $style->{optspace};
+    my $sep= $optspace . $self->{style}{hashsep} . $optspace;
+    my $pairsep= $self->{style}{pairsep};
     if ($indkey) {
-        $cindent+=$indkey+length($sep);
+        $cindent+= $indkey + length($sep);
     }
     $DEBUG==10 and print "Indent $ind $indkey $cindent\n";
     my ($kc,$ix)=(0,0);
     my $last_n=0;
     my $ind_str=" " x $indent;
-    my $optspace=$self->{style}{optspace};
+
     while (defined(my $k=defined $keyary ? $keyary->[$ix++] : each %$item)) {
        $last_n=0 if ref $item->{$k};
         if ( $kc ) {
             my $do_ind=$ind && !$last_n ;
-            $self->{fh}->print(",", $do_ind ? "\n$ind_str" : $optspace);
+            $self->{fh}->print($pairsep, $do_ind ? "\n$ind_str" : $optspace);
             $self->{buf}++;
             if ($do_ind) {
                 $self->{buf}=0;
@@ -2400,8 +2458,9 @@ sub _dump_hash {
         }
         if ($indkey) {
             my $qk=_quotekey($k);
-            my $str=$indkey>=length($qk) ? join "",$qk," " x ($indkey-length($qk)),$sep
-                                         : join "",$qk,"\n$ind_str"," " x $indkey,$sep
+            my $str=$indkey>=length($qk)
+                ? join "",$qk," " x ($indkey-length($qk)), $sep
+                : join "",$qk,"\n$ind_str"," " x $indkey, $sep
             ;
 
             $self->{buf}+=length($str);
@@ -2442,12 +2501,12 @@ sub _dump_array {
     $self->_brace($name,'[',$ind,$indent,scalar @$item);
     my $last_n=0;
     my $ind_str=(" " x $indent);
-    my $optspace=$self->{style}{optspace};
+    my ($optspace,$sep)=@{$self->{style}}{qw(optspace arysep)};
     unless ($self->{style}{rle} ) {
         foreach my $k (0..$#$item) {
             my $do_ind=$ind && (!$last_n || ref $item->[$k]);
             if ($k) {
-                $self->{fh}->print(",", $do_ind ? "\n$ind_str" : $optspace);
+                $self->{fh}->print($sep, $do_ind ? "\n$ind_str" : $optspace);
                 if ($do_ind) {
                     $self->{buf}=0;
                 } elsif (!$do_ind && !$optspace && $self->{buf} > 1024 ) {
@@ -2512,7 +2571,7 @@ sub _dump_array {
             }
 
             my $do_ind=$ind && (!$last_n || ref $item->[$k]);
-            $self->{fh}->print(",", $do_ind ? "\n$ind_str" : $optspace)
+            $self->{fh}->print($sep, $do_ind ? "\n$ind_str" : $optspace)
                 if $k;
             $self->{buf}=0 if $do_ind and $k;
             if ($count>1){
@@ -2536,7 +2595,7 @@ sub _dump_array {
                 );
             }
             if ($count>1) {
-                my $str="$optspace)${optspace}x${optspace}$count";
+                my $str=join $optspace,'',')','x',$count;
                 $self->{buf}+=length($str);
                 $self->{fh}->print($str);
             }
@@ -3003,20 +3062,15 @@ sub Indent {
     my $self=shift->_safe_self();
     if (@_) {
         my $val=shift;
-        $self->{style}{indent}=$val;
-        if ( $val == 0 ) {
+
+        if ( $val == 0 && length $self->{style}{optspace} ) {
+            $self->{style}{last_optspace}= $self->{style}{optspace};
             $self->{style}{optspace}= "";
-            for ($self->{style}{hashsep}) {
-                s/^\s+//;
-                s/\s+$//;
-            }
-        } else {
-            $self->{style}{optspace}= " ";
-            for ($self->{style}{hashsep}) {
-                s/^\s*/ /;
-                s/\s*$/ /;
-            }
+        } elsif( !$self->{style}{indent} && ! length $self->{style}{optspace} )
+        {
+            $self->{style}{optspace}= $self->{style}{last_optspace};
         }
+        $self->{style}{indent}= $val;
         return $self
     } else {
         return $self->{style}{indent}
@@ -3036,7 +3090,8 @@ occassional not indent very nicely.
 
 Default is Indent(2)
 
-If indent is False then no indentation is done.
+If indent is False then no indentation is done, and all optional whitespace.
+is omitted. See <OptSpace()|/OptSpace> for more details.
 
 Defaults to True.
 
@@ -3058,6 +3113,22 @@ Defaults to True.
 
 B<NOTE:>
 Must be set before C<Data()> is called.
+
+=for UEDIT
+sub OptSpace      {}
+
+=item OptSpace
+
+=item OptSpace STR
+
+Normally DDS emits a lot of whitespace in between tokens that it
+emits. Using this method you can control how much whitespace it
+will emit, or even if some other string should be used.
+
+If Indent is set to 0 then this value is automatically set to
+the empty string. When Indent is set back to a non zero value
+the old value will be restored if it has not been changed from
+the empty string in the intervening time.
 
 =for UEDIT
 sub Keyorder      {}
@@ -3107,19 +3178,19 @@ single statement are encountered the reference is substituted for a
 descriptive tag saying what type of forward reference it is, and to what
 is being referenced. The type is provided through a prefix, "R:" for
 reference, and "A:" for alias, "V:" for a value and then the name of the
-var in a string. Automatically generated var names are also reduced to the
-shortest possible unique abbreviation, with some tricks thrown in for
-Long::Class::Names::Like::This (which would abbreviate most likely to
-LCNLT1)
+var in a string. Automatically generated var names are also reduced to
+the shortest possible unique abbreviation, with some tricks thrown in
+for Long::Class::Names::Like::This (which would abbreviate most likely
+to LCNLT1)
 
 If Verbose if False then a simple placeholder saying 'A' or 'R' is
-provided. (In most situations perl requires a placeholder, and as such one
-is always provided, even if technically it could be omitted.)
+provided. (In most situations perl requires a placeholder, and as such
+one is always provided, even if technically it could be omitted.)
 
 This setting does not change the followup statements that fix up the
 structure, and does not result in a loss of accuracy, it just makes it a
-little harder to read. OTOH, it means dumps can be quite a bit smaller and
-less noisy.
+little harder to read. OTOH, it means dumps can be quite a bit smaller
+and less noisy.
 
 Defaults to True.
 
@@ -3372,6 +3443,54 @@ sub Ignore {
     return $self;
 }
 
+=for UEDIT
+sub Compress {}
+
+=item Compress
+
+=item Compress SIZE
+
+Controls compression of string values (not keys). If this value
+is nonzero and a string to be dumped is longer than its value then
+the L<Compressor()|/Compressor> if defined is used to compress
+the string.  Setting size to -1 will cause all strings to be
+processed, setting size to 0 will cause no strings to be processed.
+
+=for UEDIT
+sub Compressor {}
+
+=item Compressor
+
+=item Compressor CODE
+
+This attribute is used to control the compression of strings.
+It is expected to be a reference to a subroutine with the following
+interface:
+
+  my $prelude_code=$compressor->(); # no arguments.
+  my $code=$compressor->('string'); # string argument
+
+The sub will be called with no arguments at the beginning of the
+dump to allow any require statments or similar to be added. During
+the dump the sub will be called with a single argument when
+compression is required. The code returned in this case is expected
+to be an EXPR that will evaluate back to the original string.
+
+By default DDS will use L<Compress::Zlib> in conjunction with
+L<MIME::Base64> to do compression and encoding, and exposes the
+'usqz' subroutine for handling the decoding and decompression.
+
+The abbreviated name was chosen as when using the default compressor
+every string will be represented by a string like
+
+   usqz('....')
+
+Meaning that eight characters are required without considering the
+data itself. Likewise Base64 was chosen because it is a representation
+that is high-bit safe, compact and easy to quote. Escaped strings are
+much less efficient for storing binary data.
+
+=cut
 
 # weird styling here deliberate.
 sub
@@ -3447,7 +3566,8 @@ sub SortKeys {
 my %scalar_meth=map{ $_ => lc($_)}
       qw(Declare Indent IndentCols IndentKeys
         Verbose DumpGlob Deparse DeparseGlob DeparseFormat CodeStub
-        FormatStub Rle RLE Purity DualVars Dualvars EclipseName);
+        FormatStub Rle RLE Purity DualVars Dualvars EclipseName
+        Compress Compressor OptSpace);
 
 sub AUTOLOAD {
     (my $meth=$AUTOLOAD)=~s/^((?:\w+::)+)//;
@@ -3720,15 +3840,28 @@ feedback and ideas.
 
 =head1 SEE ALSO (its a crowded space, isn't it!)
 
- L<Data::Dumper>                the mother of them all
- L<Data::Dumper::Simple>        source filter interface, basic feature set
- L<Data::Dumper::Names>         Named vars without sourcefiltering.
- L<Data::Dumper::EasyOO>        easy to use wrapper for DD
- L<Data::Dump>                  has cool feature to squeeze data
- L<Data::Dump::Streamer>        highly accurate, evaluable output
- L<Data::TreeDumper>            lots of output options
+L<Data::Dumper>
+- the mother of them all
 
-And of course www.perlmonks.org and L<perl> itself.
+L<Data::Dumper::Simple>
+- Auto named vars with source filter interface.
+
+L<Data::Dumper::Names>
+- Auto named vars without source filtering.
+
+L<Data::Dumper::EasyOO>
+- easy to use wrapper for DD
+
+L<Data::Dump>
+- Has cool feature to squeeze data
+
+L<Data::Dump::Streamer>
+- The best perl dumper. But I would say that. :-)
+
+L<Data::TreeDumper>
+- Non perl output, lots of rendering options
+
+And of course L<www.perlmonks.org> and L<perl> itself.
 
 =cut
 

@@ -33,7 +33,10 @@ if ($override) {
             ? 'yes' : 'no';
     print "\n";
     print "I can install a shortcut so you can use the package 'DDS'\n";
-    print "as though it was 'Data::Dump::Streamer'. This is handy for oneliners.\n\n";
+    print "as though it was 'Data::Dump::Streamer'. ";
+    print "This is handy for oneliners.\n*Note* that if you ";
+    print "select 'no' below and you already\nhave it installed ";
+    print "then it will be removed.\n\n";
     $value = prompt("Would you like me to install the shortcut? (yes/no)",
                    $default);
 }
@@ -68,7 +71,7 @@ WriteMakefile(
         'Test::More'      => 0,
         'Text::Abbrev'    => 0,
         'B::Deparse'      => 0,
-        'B::Utils'        => 0,
+        'B::Utils'        => 0.05,
         # recommends: 'PadWalker'       => 1,
     },
     (
