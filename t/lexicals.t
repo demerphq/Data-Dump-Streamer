@@ -1,6 +1,8 @@
 use strict;
 use warnings;
 
+#$Id: lexicals.t 26 2006-04-16 15:18:52Z demerphq $#
+
 use Data::Dump::Streamer;
 use Test::More tests => 14;
 (my $helper=$0)=~s/\w+\.\w+$/test_helper.pl/;

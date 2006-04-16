@@ -1,108 +1,33 @@
-1.0
+$Id: Changes 30 2006-04-16 15:33:25Z demerphq $
 
-Release version. Name changed to Data::Dump::Streamer which will be
-future name.
+2.03
 
-1.01
+Fixed some issues with dmping proxy objects with circular links.
 
-Post-release minor fix to provide SortKeys and Hashkeys aliases to
-both SortKeys and HashKeys. Thanks to Slaven Rezic for the heads up.
-Added documentation improvements and fixes as well as a very slight
-and subtle change to the behaviour of Dump() in list context.
+Started integrating subversion into the perl build process to prevent
+stuff like releasing unchecked in code, and to include the subversion
+build number in the distribution file name.
 
-1.02
+Reversed the order of the change file so that newest stuff is at top.
 
-Changed test 14 of dump.t, added a few tests, and some support code
-for future enhancements, and most notably support for deparsing
-formats. Thanks to Yitzchak Scott-Thoennes for the latter.
+2.02
 
-1.03, 1.04
+Added OptSpace() which can be used to control optional whitespace.
+Indent(0) automatically disables optional whitespace.
 
-Enhanced format support for FORMAT refs. Yitzchak pointed out some
-bugs in the original handling. DeparseFormat() has been removed. It
-should never have existed in the first place. DeparseGlob() was the
-correct method/attribute to use. FormatStub() attribute added.
+String compression support has been provided. Use Compress()
+to specify how long a string should be before it is compressed.
+Use Compressor() to supply a callback to handle the compression.
 
-This release I'm introducing some new testing code that im trying out.
-Once im happy with it I intend to convert all my old tests to use it
-and do away with the really quite horrible same() and _same() in
-test_helper.pl.
+More tests, better documentation.
 
-1.05
+2.01
 
-Added support for locked hashes. Probably there are still bugs in here,
-but for now it looks good. Thanks to Yitzchak for pointing out this wasn't
-implemented.
+Bug fixes, documentation patches and a few more tests.
 
-Also started adding support for a "smart indent mode". Try using Indent(1)
-instead of Indent(2).
+DumpNames() renamed to DumpVars().
 
-1.06
-
-Added additional support for utf8 and some minor doc fixes. Thanks to
-Yitzchak yet again for the patches and advice.
-
-1.07
-
-Fixed some incorrect error messages in Streamer.xs. Updated CHANGES with 1.06
-info which I forgot from that release. Fixed utf8 related error. Thanks to
-Yitzchak for the patch. Provided a way to optionally install a 'DDS' alias
-for the module so that its easier to use from the command line. Doesn't install
-it by default, or via a normal CPAN install for namespace pollution reasons,
-and because I hate modules that dont automatically install. If you do
-
-  perl Makefile.PL DDS [STANDARD OPTS]
-
-then it will be installed. To disable this once its enabled you can say
-
-  perl Makefile.PL NODDS [STANDARD OPTS]
-
-
-1.08
-
-Doc fixes, and removed a relic of earlier development that polluted @INC.
-
-1.09
-
-Changed the way DDS is implemented to something a little simpler. Also enhanced
-the Makefile.pl stuff, and added mention of it to D::D::S's pod.
-
-1.10
-
-Added dualvar support. Added support for a low purity mode and Purity() overall.
-Refactored some code. More tests.
-
-1.11
-
-Reworked how objects blessed into classes with overloads are handled to prevent
-any overloaded methods from firing during the eval of their dump. There may be
-problems with this and the Freeze/Thaw processing so YMMV. Thanks to [diotalevi]
-from perlmonks for the base implementation of this.
-
-Added support for weakreferences. Under some circumstances weakrefs caused DDS
-to get very confused, and there was no support for recreating weakrefs in the
-structure. This has been rectified. Its possible that output including weakrefs
-may not eval correctly as the restored data may be missing external references
-that keep the overall data structure alive. For instance if everything in the
-dump is a weakref the resulting vars may have returned to undef prior to completing
-the eval. YMMV. Thanks to [ysth] from perlmonks for the pointer to how weakrefs work.
-
-Added method behaviour to Dump() so its not just subroutine based. This should make
-using it as a method more or less DWIM. Also thanks to [diotalevi]
-
-Added support for dumping the lexical context of CODE refs. Heavily experimental,
-YMMV.
-
-1.12
-
-Dan Brook noticed that closures that referenced closures were not being handled properly
-as the code wasnt iterating into the nested closures. This is fixed now.
-
-1.14
-
-Jim Cromie put together a patch to make aliasing less intrusive. As the term alias was
-fairly heavily used already I changed his 'alias' mechanism to 'as', blame me not him
-for the silly name. Also includes a few minor fixes, and a little bit of pod cleanup.
+This fixes test failures that were coming from lexicals.t
 
 2.00
 
@@ -127,21 +52,107 @@ Added support for Padwalker functionality that Robin Housten implemented.
 
 Long quoted strings are now split to be easier to read.
 
-2.01
+1.14
 
-Bug fixes, documentation patches and a few more tests.
+Jim Cromie put together a patch to make aliasing less intrusive. As the term alias was
+fairly heavily used already I changed his 'alias' mechanism to 'as', blame me not him
+for the silly name. Also includes a few minor fixes, and a little bit of pod cleanup.
 
-DumpNames() renamed to DumpVars().
+1.12
 
-This fixes test failures that were coming from lexicals.t
+Dan Brook noticed that closures that referenced closures were not being handled properly
+as the code wasnt iterating into the nested closures. This is fixed now.
 
-2.02
+1.11
 
-Added OptSpace() which can be used to control optional whitespace.
-Indent(0) automatically disables optional whitespace.
+Reworked how objects blessed into classes with overloads are handled to prevent
+any overloaded methods from firing during the eval of their dump. There may be
+problems with this and the Freeze/Thaw processing so YMMV. Thanks to [diotalevi]
+from perlmonks for the base implementation of this.
 
-String compression support has been provided. Use Compress()
-to specify how long a string should be before it is compressed.
-Use Compressor() to supply a callback to handle the compression.
+Added support for weakreferences. Under some circumstances weakrefs caused DDS
+to get very confused, and there was no support for recreating weakrefs in the
+structure. This has been rectified. Its possible that output including weakrefs
+may not eval correctly as the restored data may be missing external references
+that keep the overall data structure alive. For instance if everything in the
+dump is a weakref the resulting vars may have returned to undef prior to completing
+the eval. YMMV. Thanks to [ysth] from perlmonks for the pointer to how weakrefs work.
 
-More tests, better documentation.
+Added method behaviour to Dump() so its not just subroutine based. This should make
+using it as a method more or less DWIM. Also thanks to [diotalevi]
+
+Added support for dumping the lexical context of CODE refs. Heavily experimental,
+YMMV.
+
+1.10
+
+Added dualvar support. Added support for a low purity mode and Purity() overall.
+Refactored some code. More tests.
+
+1.09
+
+Changed the way DDS is implemented to something a little simpler. Also enhanced
+the Makefile.pl stuff, and added mention of it to D::D::S's pod.
+
+1.08
+
+Doc fixes, and removed a relic of earlier development that polluted @INC.
+
+1.07
+
+Fixed some incorrect error messages in Streamer.xs. Updated CHANGES with 1.06
+info which I forgot from that release. Fixed utf8 related error. Thanks to
+Yitzchak for the patch. Provided a way to optionally install a 'DDS' alias
+for the module so that its easier to use from the command line. Doesn't install
+it by default, or via a normal CPAN install for namespace pollution reasons,
+and because I hate modules that dont automatically install. If you do
+
+  perl Makefile.PL DDS [STANDARD OPTS]
+
+then it will be installed. To disable this once its enabled you can say
+
+  perl Makefile.PL NODDS [STANDARD OPTS]
+
+1.06
+
+Added additional support for utf8 and some minor doc fixes. Thanks to
+Yitzchak yet again for the patches and advice.
+
+1.05
+
+Added support for locked hashes. Probably there are still bugs in here,
+but for now it looks good. Thanks to Yitzchak for pointing out this wasn't
+implemented.
+
+Also started adding support for a "smart indent mode". Try using Indent(1)
+instead of Indent(2).
+
+1.03, 1.04
+
+Enhanced format support for FORMAT refs. Yitzchak pointed out some
+bugs in the original handling. DeparseFormat() has been removed. It
+should never have existed in the first place. DeparseGlob() was the
+correct method/attribute to use. FormatStub() attribute added.
+
+This release I'm introducing some new testing code that im trying out.
+Once im happy with it I intend to convert all my old tests to use it
+and do away with the really quite horrible same() and _same() in
+test_helper.pl.
+
+1.02
+
+Changed test 14 of dump.t, added a few tests, and some support code
+for future enhancements, and most notably support for deparsing
+formats. Thanks to Yitzchak Scott-Thoennes for the latter.
+
+1.01
+
+Post-release minor fix to provide SortKeys and Hashkeys aliases to
+both SortKeys and HashKeys. Thanks to Slaven Rezic for the heads up.
+Added documentation improvements and fixes as well as a very slight
+and subtle change to the behaviour of Dump() in list context.
+
+1.0
+
+Release version. Name changed to Data::Dump::Streamer which will be
+future name.

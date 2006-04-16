@@ -1,4 +1,5 @@
 use ExtUtils::MakeMaker;
+#$Id: Makefile.PL 30 2006-04-16 15:33:25Z demerphq $#
 
 sub DDS {
     (my $text=<<'EOF_DDS')=~s/^#//gm; return $text;
@@ -18,6 +19,10 @@ sub DDS {
 #
 #See L<Data::Dump::Streamer>.
 #
+#=head1 VERSION
+#
+# $Id: Makefile.PL 30 2006-04-16 15:33:25Z demerphq $
+#
 #=cut
 #
 EOF_DDS
@@ -29,20 +34,33 @@ $override= $ARGV[0]=~/^(?:NO)?DDS$/i ? shift @ARGV : undef;
 if ($override) {
     $value=$override=~/^no/i ? 'no' : 'yes';
 } else {
-    $default= eval("require DDS; 1") || -e("./lib/DDS.pm")
-            ? 'yes' : 'no';
-    print "\n";
-    print "I can install a shortcut so you can use the package 'DDS'\n";
-    print "as though it was 'Data::Dump::Streamer'. ";
-    print "This is handy for oneliners.\n*Note* that if you ";
-    print "select 'no' below and you already\nhave it installed ";
-    print "then it will be removed.\n\n";
-    $value = prompt("Would you like me to install the shortcut? (yes/no)",
-                   $default);
+    if (-e '.answer' and open my $fh,"<",'.answer') {
+        print "I will install (or not) the DDS shortcut as you requested previously.\n";
+        print "If you wish to override the previous answer then state so explicitly\n";
+        print "by saying 'perl Makefile.PL [NO]DDS'\n";
+        chomp($value=<$fh>);
+        print "Previous answer was: $value\n";
+    }
+    if (!$value) {
+        $default= eval("require DDS; 1") || -e("./lib/DDS.pm")
+                ? 'yes' : 'no';
+        print "\n";
+        print "I can install a shortcut so you can use the package 'DDS'\n";
+        print "as though it was 'Data::Dump::Streamer'. ";
+        print "This is handy for oneliners.\n*Note* that if you ";
+        print "select 'no' below and you already\nhave it installed ";
+        print "then it will be removed.\n\n";
+        $value = prompt("Would you like me to install the shortcut? (yes/no)",
+                       $default);
+        if (open my $fh,">",'.answer') {
+            print $fh $value;
+            close $fh;
+        }
+    }
 }
 if ( $value=~/yes/i )
 {
-    print "Ok, I will also install DDS as an alias.\n";
+    print "I will also install DDS as an alias.\n";
     open my $ofh,">","./lib/DDS.pm" or die "Failed to open ./lib/DDS.pm:$!";
     print $ofh DDS();
     close $ofh;
@@ -61,9 +79,28 @@ while (<$f>) {
 }
 
 
+my $v=ExtUtils::MM_Unix->parse_version('lib/Data/Dump/Streamer.pm');
+if ($ENV{username} eq 'demerphq') {
+    system('SubWCRev . .build.tmpl .patch');
+}
+my $build;
+{ open my $fh,"<",".patch" or die "No '.patch' file!:$!";
+  chomp($b= <$fh>);
+  close $fh;
+};
+
+{package MY;
+sub distdir {
+    my $MM=shift;
+    my $orig= $MM->SUPER::distdir();
+    $orig=~s/^(\s+\$)/$1(PREOP)\n$1/m;
+    return $orig;
+}}
+
+
 WriteMakefile(
     'NAME'         => 'Data::Dump::Streamer',
-    'VERSION_FROM' => 'lib/Data/Dump/Streamer.pm',    # finds $VERSION
+    'VERSION'      => "$v-$b",    # finds $VERSION
     'PREREQ_PM'    => {
         #'Algorithm::Diff' => undef,
         #'Data::Dumper'    => undef,
@@ -86,7 +123,12 @@ WriteMakefile(
         )
     ),
     ($xs_version ? (XS_VERSION => $xs_version) : () ),
-    dist => {COMPRESS => 'gzip -9f', SUFFIX => 'gz',},
+    dist => {
+        COMPRESS => 'gzip -9f',
+        SUFFIX => 'gz',
+        PREOP => 'SubWCRev . -n',
+
+    },
     @opts
 );
 

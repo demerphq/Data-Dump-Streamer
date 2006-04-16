@@ -1,5 +1,7 @@
 use Test::More tests => 6;
 
+#$Id: madness_w.t 26 2006-04-16 15:18:52Z demerphq $#
+
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump weaken) ); }
 use strict;
 use warnings;

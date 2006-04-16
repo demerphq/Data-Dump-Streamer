@@ -34,7 +34,8 @@ $DEBUG=0;
 BEGIN{ $HasPadWalker=eval "use PadWalker 0.99; 1"; }
 
 BEGIN {
-    $VERSION   ='2.02';
+    #$Id: Streamer.pm 26 2006-04-16 15:18:52Z demerphq $#
+    $VERSION   ='2.03';
     $XS_VERSION='2.01';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
@@ -1211,6 +1212,8 @@ sub DumpVars {
 sub _reg_ref {
     my ($self,$item,$depth,$name,$cnt,$arg)=@_;
 
+    warn "_ref_ref($depth,$name,$cnt)\n" if $DEBUG;
+
     my $addr=refaddr $item;
     $arg->{raddr}=$addr if $arg;
     my $idx;
@@ -1397,6 +1400,11 @@ PASS:{
                 $raddr=refaddr($item);
                 $class=blessed($item);
 
+                if ($self->{ref_fz}{$raddr}) {
+                    print "Skipping frozen element $raddr\n" if $DEBUG;
+                    next;
+                }
+
                 $DEBUG and
                 print "Q-> $item $cdepth $cname $rcnt ($raddr)\n";
 
@@ -1472,6 +1480,7 @@ PASS:{
             $DEBUG and print "  Skipping '$cname' as it is a dupe of ".
                              "$self->{refn}[$idx]\n"
                 if $dupe;
+
             $DEBUG>9 and $self->diag;
             next if $dupe;
 
@@ -1769,23 +1778,21 @@ sub _dump_apply_fix { #handle fix statements and GLOB's here.
                 } elsif ($type eq 'thaw') {
                     # these have to happen at the end.
                     if ($isfinal) {
-                        if ($self->{refdu}[$lhs] and ${$self->{"refdu"}[$lhs]}) {
-                            $lhs=$self->{"refn"}[$lhs];
-                            my @args=@$_[3..$#$_];
-                            if ($rhs=~/^(->)?((?:\w*::)*\w+)(\(\))?$/) {
-                                if ($3) {
-                                    $self->{fh}->print("$2( ".join(", ",$lhs,@args)." );\n");
-                                } else {
-                                    $self->{fh}->print("$lhs->$2(".join(", ",@args).");\n");
-                                }
+                        #if ($self->{refdu}[$lhs] and ${$self->{"refdu"}[$lhs]}) {
+                        ${$self->{refdu}[$lhs]}=1;
+                        $lhs=$self->{"refn"}[$lhs];
+                        my @args=@$_[3..$#$_];
+                        if ($rhs=~/^(->)?((?:\w*::)*\w+)(\(\))?$/) {
+                            if ($3) {
+                                $self->{fh}->print("$2( ".join(", ",$lhs,@args)." );\n");
                             } else {
-                                $rhs=~s/^\t//mg;
-                                $self->{fh}->print("for ($lhs) {\n$rhs\n}\n");
+                                $self->{fh}->print("$lhs->$2(".join(", ",@args).");\n");
                             }
-                            $keep=0;
                         } else {
-                            die "Bad mojo!";
+                            $rhs=~s/^\t//mg;
+                            $self->{fh}->print("for ($lhs) {\n$rhs\n}\n");
                         }
+                        $keep=0;
                     }
                 } elsif ($type eq 'glob') {
                     push @globs,$_;
@@ -1945,7 +1952,7 @@ All should DWIM.
 # w/the right tags for now...
 
 sub Out {
-    local($\,$",$,); #" prevent globals from messing with our output via print
+    local($\,$",$,)=("","",""); # prevent globals from messing with our output via print
     my $self = shift->_safe_self;
     print "Out(".scalar(@_)." vars)\n"
         if $DEBUG;
@@ -2416,8 +2423,9 @@ sub _dump_hash {
     #Carp::confess "$name" unless defined $self->{ref_hkcnt}{$addr};
 
     my ($keyary)= $self->_get_keys($item,1,$addr,$class);
-
-    warn "Keys: $keyary : @$keyary" if $keyary and $DEBUG;
+    if ($keyary and $DEBUG) {
+        warn "Keys: $keyary : @$keyary"
+    }
 
     my $full_indent=$self->{style}{indent}>1;
     my $ind=($self->{style}{indent}) &&
@@ -2757,6 +2765,7 @@ sub _dump_rv {
                 $ignore=1;
             } elsif (ref $item) {
                 $is_frozen_replacement=1;
+                $dumped= \do{my $d};
                 $raddr=$addr;
                 redo GETITEM;
             } else {
@@ -2929,8 +2938,9 @@ sub _dump_rv {
             } elsif ($thawtype eq 'method') {
                 $self->{fh}->print("->$thaw()");
             }
+            #$$dumped=1;
         } else {
-            $self->_add_fix('thaw',$idx,$thaw.($thawtype eq 'sub' ? "()" :"" ));
+            $self->_add_fix('thaw', $idx, $thaw.($thawtype eq 'sub' ? "()" :"" ));
         }
     }
     if ( my $postop=$self->{ref_postop}{$raddr||$addr} ) {

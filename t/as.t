@@ -1,5 +1,7 @@
 #!perl -w
 
+#$Id: as.t 26 2006-04-16 15:18:52Z demerphq $#
+
 use Test::More tests => 4;
 
 use_ok 'Data::Dump::Streamer';
