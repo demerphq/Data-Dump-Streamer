@@ -1,4 +1,6 @@
 
+#$Id: xs_subs.t 26 2006-04-16 15:18:52Z demerphq $#
+
 use vars qw/$XTRA/;
 use Test::More tests=>10+($XTRA=26);
 

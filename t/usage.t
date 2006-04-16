@@ -25,6 +25,8 @@ for my $snippet (@tests){
         or diag @list ? "[@list]" : $string;
 }    
 
+#$Id: usage.t 26 2006-04-16 15:18:52Z demerphq $#
+
 
 
 

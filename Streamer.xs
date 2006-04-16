@@ -1,4 +1,8 @@
-/* Precise/Streamer.xs
+/*
+ * Streamer.xs
+ *
+ * $Id: Streamer.xs 28 2006-04-16 15:21:51Z demerphq $
+ *
  * Code from Array::RefElem
  * Copyright (c) 1997-2000 Graham Barr <gbarr@pobox.com>. All rights reserved.
  * This program is free software; you can redistribute it and/or
@@ -70,7 +74,7 @@ extern "C" {
             AV *av = (AV *)mg->mg_obj;                  \
             RETVAL += av_len(av)+1;                     \
         }                                               \
-    } while (0)                             
+    } while (0)
 #else
 #define ADD_WEAK_REFCOUNT
 #endif
@@ -219,12 +223,12 @@ MODULE = B	PACKAGE = B::SV
 
 #define object_2svref(sv)	sv
 #define SVREF SV *
-	
+
 SVREF
 object_2svref(sv)
 	B::SV	sv
 
-#endif	
+#endif
 
 MODULE = Data::Dump::Streamer		PACKAGE = Data::Dump::Streamer
 

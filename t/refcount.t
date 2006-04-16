@@ -1,6 +1,8 @@
 use Test::More tests => 18;
 use Devel::Peek;
 
+#$Id: refcount.t 26 2006-04-16 15:18:52Z demerphq $#
+
 BEGIN { use_ok( 'Data::Dump::Streamer', 
             qw(refcount sv_refcount is_numeric looks_like_number weak_refcount weaken isweak)); 
 }

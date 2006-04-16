@@ -1,6 +1,7 @@
 {
-
     package Data::Dump::Streamer::_::StringPrinter;
+    #$Id: Printers.pm 26 2006-04-16 15:18:52Z demerphq $#
+    $VERSION= "0.1";
     my %items;
     sub DESTROY { delete $items{$_[0]} }
 
@@ -23,6 +24,7 @@
 {
 
     package Data::Dump::Streamer::_::ListPrinter;
+    $VERSION= "0.1";
     my %items;
     sub DESTROY { delete $items{$_[0]} }
 

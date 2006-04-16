@@ -1,8 +1,10 @@
-use Test::More tests => 9;
+use Test::More tests => 11;
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump) ); }
 use strict;
 use warnings;
 use Data::Dumper;
+
+#$Id: filter.t 26 2006-04-16 15:18:52Z demerphq $#
 
 # imports same()
 (my $helper=$0)=~s/\w+\.\w+$/test_helper.pl/;
@@ -126,7 +128,34 @@ $HASH1->{Three}->DDS_thaw();
 EXPECT
     }
 
-}__END__
+}
+{
+    my $x=bless [],'CIO';
+    my $y={x=>$x};
+    $x->[0]=$y;
+    my $nope=0;
+    sub CIO::DDS_freeze {
+        my $self=shift;
+        return if $nope;
+        return { x0 => $self->[0] },'Unfreeze()'
+    }
+    same( $dump = $o->Data( $x,$y )->Out, <<'EXPECT', "freeze/circular", $o );
+$CIO1 = { x0 => 'V: $HASH1' };
+$HASH1 = { x => 'V: $CIO1' };
+$CIO1->{x0} = $HASH1;
+Unfreeze( $CIO1 );
+$HASH1->{x} = $CIO1;
+EXPECT
+    $nope=1;
+    same( $dump = $o->Data( $x,$y )->Out, <<'EXPECT', "nofreeze / circular", $o );
+$CIO1 = bless( [ 'V: $HASH1' ], 'CIO' );
+$HASH1 = { x => $CIO1 };
+$CIO1->[0] = $HASH1;
+EXPECT
+}
+
+
+__END__
 # with eval testing
 {
     same( "", $o, <<'EXPECT', (  ) );

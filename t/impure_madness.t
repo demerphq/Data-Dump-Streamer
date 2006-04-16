@@ -1,5 +1,7 @@
 use Test::More tests => 8;
 
+#$Id: impure_madness.t 26 2006-04-16 15:18:52Z demerphq $#
+
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump) ); }
 use strict;
 use warnings;

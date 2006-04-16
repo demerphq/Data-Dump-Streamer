@@ -1,5 +1,7 @@
 use Test::More tests=>19;
 
+#$Id: globtest.t 26 2006-04-16 15:18:52Z demerphq $#
+
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(regex Dump alias_av alias_hv) ); }
 use strict;
 use warnings;

@@ -1,6 +1,8 @@
 # This is from the Scalar::Utils distro
 use Data::Dump::Streamer qw(blessed);
 
+#$Id: blessed.t 26 2006-04-16 15:18:52Z demerphq $#
+
 use vars qw($t $y $x);
 
 print "1..7\n";
