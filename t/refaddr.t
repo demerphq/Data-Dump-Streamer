@@ -2,6 +2,8 @@ use Data::Dump::Streamer qw(refaddr);
 use vars qw($t $y $x *F $v $r);
 use Symbol qw(gensym);
 
+#$Id: refaddr.t 26 2006-04-16 15:18:52Z demerphq $#
+
 # Ensure we do not trigger and tied methods
 tie *F, 'MyTie';
 

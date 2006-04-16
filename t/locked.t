@@ -1,6 +1,8 @@
 use vars qw /$TESTS/;
 use Test::More tests=>2+($TESTS=9);
 
+#$Id: locked.t 26 2006-04-16 15:18:52Z demerphq $#
+
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump) ); }
 use strict;
 use warnings;

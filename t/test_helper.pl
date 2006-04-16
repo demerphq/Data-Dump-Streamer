@@ -8,6 +8,8 @@ BEGIN {
     $Has{sortkeys}=!!eval "Data::Dumper->new([1])->Sortkeys(1)->Dump()";
 }  
 
+#$Id: test_helper.pl 26 2006-04-16 15:18:52Z demerphq $#
+
 # all of this is acumulated junk used for making the various test easier.
 # as a close inspection shows, this all derives from different periods of
 # the module and is pretty nasty/hacky to look at. Slowly id like to convert

@@ -3,6 +3,8 @@ use Data::Dump::Streamer qw(reftype);
 use vars qw($t $y $x *F);
 use Symbol qw(gensym);
 
+#$Id: reftype.t 26 2006-04-16 15:18:52Z demerphq $#
+
 # Ensure we do not trigger and tied methods
 tie *F, 'MyTie';
 

@@ -1,5 +1,7 @@
 print "1..5\n";
 
+#$Id: refelem.t 26 2006-04-16 15:18:52Z demerphq $#
+
 use strict;
 use Data::Dump::Streamer qw(alias_av push_alias alias_hv);
 

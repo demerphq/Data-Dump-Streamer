@@ -1,4 +1,4 @@
-# $Id: MANIFEST.SKIP 29 2006-04-16 15:28:40Z demerphq $
+#$Id: INSTALL.SKIP 26 2006-04-16 15:18:52Z demerphq $id
 # Avoid version control files.
 \bRCS\b
 \bCVS\b
@@ -30,11 +30,3 @@
 
 # Avoid Devel::Cover files.
 \bcover_db\b
-
-#DDS Specific
-\.answer$
-\.build\.tmpl$
-\.tar\.gz$
-DDS\.pm
-\.(bs|c|def|obj|pdb)$
-^dds\w+\.pl
