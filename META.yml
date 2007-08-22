@@ -1,15 +1,18 @@
-# http://module-build.sourceforge.net/META-spec.html
-#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
-name:         Data-Dump-Streamer
-version:      2.03-30
-version_from: 
-installdirs:  site
-requires:
+--- #YAML:1.0
+name:                Data-Dump-Streamer
+version:             2.04-34
+abstract:            Accurately serialize a data structure as Perl code.
+license:             ~
+generated_by:        ExtUtils::MakeMaker version 6.36
+distribution_type:   module
+requires:     
     B::Deparse:                    0
     B::Utils:                      0.05
     Test::More:                    0
     Text::Abbrev:                  0
     Text::Balanced:                0
-
-distribution_type: module
-generated_by: ExtUtils::MakeMaker version 6.30
+meta-spec:
+    url:     http://module-build.sourceforge.net/META-spec-v1.2.html
+    version: 1.2
+author:
+    - Yves Orton (demerphq)

@@ -34,8 +34,8 @@ $DEBUG=0;
 BEGIN{ $HasPadWalker=eval "use PadWalker 0.99; 1"; }
 
 BEGIN {
-    #$Id: Streamer.pm 26 2006-04-16 15:18:52Z demerphq $#
-    $VERSION   ='2.03';
+    #$Id: Streamer.pm 34 2007-08-22 22:10:58Z demerphq $#
+    $VERSION   ='2.04';
     $XS_VERSION='2.01';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
