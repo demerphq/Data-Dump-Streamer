@@ -1,4 +1,9 @@
-$Id: Changes 30 2006-04-16 15:33:25Z demerphq $
+$Id: Changes 34 2007-08-22 22:10:58Z demerphq $
+
+2.04 (2007-08-23 00:09:55)
+
+Remove various unsavoury items from INSTALL.SKIP and bump the version
+number.
 
 2.03
 
