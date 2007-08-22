@@ -1,4 +1,9 @@
-$Id: Changes 34 2007-08-22 22:10:58Z demerphq $
+$Id: Changes 35 2007-08-22 22:24:33Z demerphq $
+
+2.05 (2007-08-23 00:23:19)
+
+Fix http://rt.cpan.org/Ticket/Display.html?id=28053, where undef
+and '' are confused inside of repeat value folding logic.
 
 2.04 (2007-08-23 00:09:55)
 

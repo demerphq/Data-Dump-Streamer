@@ -34,8 +34,8 @@ $DEBUG=0;
 BEGIN{ $HasPadWalker=eval "use PadWalker 0.99; 1"; }
 
 BEGIN {
-    #$Id: Streamer.pm 34 2007-08-22 22:10:58Z demerphq $#
-    $VERSION   ='2.04';
+    #$Id: Streamer.pm 36 2007-08-22 22:27:27Z demerphq $#
+    $VERSION   ='2.05';
     $XS_VERSION='2.01';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
@@ -2565,6 +2565,8 @@ sub _dump_array {
                          $self->{svt}[$self->{sv}{refaddr(\$item->[$k + $count])}]==1)
 
                     and !$v == !$item->[ $k + $count ]
+                    
+                    and defined($v) == defined($item->[ $k + $count ])
                 )
 
                 {

@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                Data-Dump-Streamer
-version:             2.04-34
+version:             2.05-36
 abstract:            Accurately serialize a data structure as Perl code.
 license:             ~
 generated_by:        ExtUtils::MakeMaker version 6.36
