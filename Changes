@@ -1,4 +1,15 @@
-$Id: Changes 35 2007-08-22 22:24:33Z demerphq $
+$Id: Changes 38 2007-12-21 21:31:05Z demerphq $
+
+2.06 (2007-12-21 22:27:45)
+
+Finally got DDS running under blead/Perl 5.10
+
+Currently we duplicate code that is in Perl 5.10's Hash::Util (*),
+this code should not be compiled under Perl 5.10 and we should 
+just use Hash::Util instead. 
+
+(*) Actually Hash::Util duplicates this code, but whatever, thats 
+called progress. :-)
 
 2.05 (2007-08-23 00:23:19)
 

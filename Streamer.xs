@@ -1,7 +1,7 @@
 /*
  * Streamer.xs
  *
- * $Id: Streamer.xs 28 2006-04-16 15:21:51Z demerphq $
+ * $Id: Streamer.xs 38 2007-12-21 21:31:05Z demerphq $
  *
  * Code from Array::RefElem
  * Copyright (c) 1997-2000 Graham Barr <gbarr@pobox.com>. All rights reserved.
@@ -48,13 +48,16 @@ extern "C" {
 #if PERL_VERSION < 8
 #   define PERL_MAGIC_qr		  'r' /* precompiled qr// regex */
 #   define BFD_Svs_SMG_OR_RMG SVs_RMG
-#elif PERL_SUBVERSION>=1
+#elif ((PERL_VERSION==9) && (PERL_SUBVERSION >= 1) || (PERL_VERSION>9))
 #   define BFD_Svs_SMG_OR_RMG SVs_SMG
 #   define MY_PLACEHOLDER PL_sv_placeholder
 #else
 #   define BFD_Svs_SMG_OR_RMG SVs_RMG
 #   define MY_PLACEHOLDER PL_sv_undef
 #endif
+#if (((PERL_VERSION == 9) && (PERL_SUBVERSION >= 4)) || (PERL_VERSION > 9))
+#   define NEW_REGEX_ENGINE 1
+#endif   
 #if (((PERL_VERSION == 8) && (PERL_SUBVERSION >= 1)) || (PERL_VERSION > 8))
 #define MY_CAN_FIND_PLACEHOLDERS
 #define HAS_SV2OBJ
@@ -350,7 +353,7 @@ CODE:
     if(!sv_isobject(sv)) {
 	XSRETURN_UNDEF;
     }
-    RETVAL = sv_reftype(SvRV(sv),TRUE);
+    RETVAL = (char *)sv_reftype(SvRV(sv),TRUE);
 }
 OUTPUT:
     RETVAL
@@ -558,7 +561,7 @@ CODE:
     if(!SvROK(sv)) {
 	XSRETURN_NO;
     } else {
-        RETVAL = sv_reftype(SvRV(sv),FALSE);
+        RETVAL = (char *)sv_reftype(SvRV(sv),FALSE);
     }
 }
 OUTPUT:
@@ -762,7 +765,7 @@ OUTPUT:
     RETVAL
 
 
-
+#ifndef NEW_REGEX_ENGINE
 
 void
 regex(sv)
@@ -925,6 +928,7 @@ PPCODE:
     XSRETURN_UNDEF;
 }
 
+#endif
 
 #ifdef MY_CAN_FIND_PLACEHOLDERS
 
