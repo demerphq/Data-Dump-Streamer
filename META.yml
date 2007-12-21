@@ -1,9 +1,11 @@
 --- #YAML:1.0
 name:                Data-Dump-Streamer
-version:             2.05-36
+version:             2.06-38
 abstract:            Accurately serialize a data structure as Perl code.
 license:             ~
-generated_by:        ExtUtils::MakeMaker version 6.36
+author:              
+    - Yves Orton (demerphq)
+generated_by:        ExtUtils::MakeMaker version 6.42
 distribution_type:   module
 requires:     
     B::Deparse:                    0
@@ -12,7 +14,5 @@ requires:
     Text::Abbrev:                  0
     Text::Balanced:                0
 meta-spec:
-    url:     http://module-build.sourceforge.net/META-spec-v1.2.html
-    version: 1.2
-author:
-    - Yves Orton (demerphq)
+    url:     http://module-build.sourceforge.net/META-spec-v1.3.html
+    version: 1.3

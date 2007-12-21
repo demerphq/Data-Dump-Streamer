@@ -34,9 +34,9 @@ $DEBUG=0;
 BEGIN{ $HasPadWalker=eval "use PadWalker 0.99; 1"; }
 
 BEGIN {
-    #$Id: Streamer.pm 36 2007-08-22 22:27:27Z demerphq $#
-    $VERSION   ='2.05';
-    $XS_VERSION='2.01';
+    #$Id: Streamer.pm 38 2007-12-21 21:31:05Z demerphq $#
+    $VERSION   ='2.06';
+    $XS_VERSION='2.06';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
     @EXPORT=qw(Dump DumpLex DumpVars);
@@ -125,6 +125,13 @@ BEGIN {
 
     #warn $VERSION;
     Data::Dump::Streamer->bootstrap($XS_VERSION);
+    if ($]>=5.009004) {
+        eval q[
+            use re qw(regexp_pattern);
+            *regex= *regexp_pattern;
+            1;
+        ] or die $@;
+    }
     if ($]<=5.008) {
         *hidden_keys=sub(\%)  { return () };
         *legal_keys=sub(\%)   { return keys %{$_[0]} };
