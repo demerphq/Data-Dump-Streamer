@@ -1,7 +1,7 @@
 /*
  * Streamer.xs
  *
- * $Id: Streamer.xs 38 2007-12-21 21:31:05Z demerphq $
+ * $Id: Streamer.xs 39 2007-12-22 00:11:22Z demerphq $
  *
  * Code from Array::RefElem
  * Copyright (c) 1997-2000 Graham Barr <gbarr@pobox.com>. All rights reserved.
@@ -48,7 +48,7 @@ extern "C" {
 #if PERL_VERSION < 8
 #   define PERL_MAGIC_qr		  'r' /* precompiled qr// regex */
 #   define BFD_Svs_SMG_OR_RMG SVs_RMG
-#elif ((PERL_VERSION==9) && (PERL_SUBVERSION >= 1) || (PERL_VERSION>9))
+#elif ((PERL_VERSION==8) && (PERL_SUBVERSION >= 1) || (PERL_VERSION>8))
 #   define BFD_Svs_SMG_OR_RMG SVs_SMG
 #   define MY_PLACEHOLDER PL_sv_placeholder
 #else
