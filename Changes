@@ -1,4 +1,9 @@
-$Id: Changes 38 2007-12-21 21:31:05Z demerphq $
+$Id: Changes 39 2007-12-22 00:11:22Z demerphq $
+
+2.07 (2007-12-22 01:10:02)
+
+Version 2.06 broke on Perls < 5.10 due to a stupid thinko. Should
+build on the main Perls fine now.
 
 2.06 (2007-12-21 22:27:45)
 
