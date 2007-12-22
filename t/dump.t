@@ -1,10 +1,10 @@
-use Test::More tests => 47;
+use Test::More tests => 48;
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump DumpLex DumpVars) ); }
 use strict;
 use warnings;
 use Data::Dumper;
 
-#$Id: dump.t 26 2006-04-16 15:18:52Z demerphq $#
+#$Id: dump.t 40 2007-12-22 00:37:55Z demerphq $#
 
 # imports same()
 (my $helper=$0)=~s/\w+\.\w+$/test_helper.pl/;
@@ -484,8 +484,18 @@ use Data::Dump::Streamer qw(usqz);
 $Fnorble1=bless(\do{my$v=usqz('XXX')},'Fnorble');
 EXPECT
     is($out,$expect,"Optspace");
+     $o->Compress(0);
 }
+{
+    my $h={'-'=>1,'-1efg'=>1};
+    same( "'-' hashkeys", $o, <<'EXPECT', ( $h ) );
+$HASH1={
+         "-1efg"=>1,
+         "-"    =>1
+       };
+EXPECT
 
+}
 __END__
 # with eval testing
 {

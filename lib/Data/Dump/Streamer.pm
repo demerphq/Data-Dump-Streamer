@@ -34,8 +34,8 @@ $DEBUG=0;
 BEGIN{ $HasPadWalker=eval "use PadWalker 0.99; 1"; }
 
 BEGIN {
-    #$Id: Streamer.pm 39 2007-12-22 00:11:22Z demerphq $#
-    $VERSION   ='2.07';
+    #$Id: Streamer.pm 40 2007-12-22 00:37:55Z demerphq $#
+    $VERSION   ='2.08';
     $XS_VERSION='2.07';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
@@ -815,7 +815,7 @@ BEGIN {
         my $key = shift;
         if (!defined($key) or $key eq '') {
             return '""'
-        } elsif ($key=~$numeric_rex or $key =~ /^[-A-Za-z_]\w*$/) {
+        } elsif ($key=~$numeric_rex or $key =~ /^-?[A-Za-z_]\w*$/) {
             return $key
         } else {
             _qquote($key);

@@ -1,4 +1,11 @@
-$Id: Changes 39 2007-12-22 00:11:22Z demerphq $
+$Id: Changes 40 2007-12-22 00:37:55Z demerphq $
+
+2.08 (2007-12-22 01:34:13)
+
+Hashkeys starting with '-' were sometimes incorrectly quoted.
+See RT #29608 at
+    http://rt.cpan.org/Ticket/Display.html?id=29608
+Thanks to Maddingue for the heads up.
 
 2.07 (2007-12-22 01:10:02)
 
