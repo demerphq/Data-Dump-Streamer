@@ -12,7 +12,7 @@ SKIP:{
     $_ref=\$_item;
     skip ( "No Weak Refs", 5 )
         unless eval { weaken($_ref) };
-    
+
 # imports same()
 (my $helper=$0)=~s/\w+\.\w+$/test_helper.pl/;
 require $helper;
@@ -212,7 +212,7 @@ EXPECT
     #local $Data::Dump::Streamer::DEBUG = 1;
     my $x;
     $x = sub { \@_ }->( $x, $x );
-    my $y = $x; #keep it alive 
+    my $y = $x; #keep it alive
     weaken($x);
     push @$x, $x;
     same(   "Tye Alias Array", $o, <<'EXPECT',( $x ) );

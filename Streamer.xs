@@ -57,7 +57,7 @@ extern "C" {
 #endif
 #if (((PERL_VERSION == 9) && (PERL_SUBVERSION >= 4)) || (PERL_VERSION > 9))
 #   define NEW_REGEX_ENGINE 1
-#endif   
+#endif
 #if (((PERL_VERSION == 8) && (PERL_SUBVERSION >= 1)) || (PERL_VERSION > 8))
 #define MY_CAN_FIND_PLACEHOLDERS
 #define HAS_SV2OBJ

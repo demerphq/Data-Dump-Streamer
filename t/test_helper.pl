@@ -6,7 +6,7 @@ use vars qw/%Has/;
 BEGIN {
     $Has{diff}=!!eval "use Algorithm::Diff qw(sdiff diff); 1";
     $Has{sortkeys}=!!eval "Data::Dumper->new([1])->Sortkeys(1)->Dump()";
-}  
+}
 
 #$Id: test_helper.pl 26 2006-04-16 15:18:52Z demerphq $#
 
@@ -159,7 +159,7 @@ sub normalize {
         s/\r\n/\n/g;
         s/\s+$//gm;
         $_.="\n";
-        
+
         #warn "<after>\n$_</after>\n";
     }
     unless (defined wantarray)  {
@@ -324,7 +324,7 @@ my %mdchar=(u=>'|','+'=>'>','-'=>'<','c'=>'*');
 
 sub _my_diff {
     my ($e,$g,$mode)=@_;
-    
+
     unless ($Has{diff}) {
         if ($e ne $g) {
             return join "\n","Expected:",$e,"Got:",$g,""
@@ -332,7 +332,7 @@ sub _my_diff {
             return
         }
     }
-        
+
 
     my @exp=split /\n/,$e;
     my @got=split /\n/,$g;
@@ -419,7 +419,7 @@ sub test_dump {
 
     $test = {
                 name      => $test,
-          } 
+          }
         unless ref $test;
 
     $test->{pre_eval}= $::Pre_Eval unless exists $test->{pre_eval};
@@ -427,19 +427,19 @@ sub test_dump {
     $test->{no_dumper}= $::No_Dumper unless exists $test->{no_dumper};
     $test->{no_redump}= $::No_Redump unless exists $test->{no_redump};
 
-    $test->{verbose} = 1 
+    $test->{verbose} = 1
         if not exists $test->{verbose} and $ENV{TEST_VERBOSE};
 
     $test->{no_dumper} = 1 if !$Has{sortkeys};
 
     my @res=_dmp($obj,NO_EVAL,@_);
-    
+
     if (@res==2) {
         diag "Error:\n",$res[1];
         fail($test->{name});
         return
     }
-    
+
     my $to_dump=$obj->{out_names};
     my $to_decl=$obj->Declare ? [] : $obj->{declare}||[];
 

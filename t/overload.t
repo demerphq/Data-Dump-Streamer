@@ -42,7 +42,7 @@ ok( dump_obj( $x ),'containing glob' );
 
 {
     my ($r1,$r2);
-    $r1 = \$r2; 
+    $r1 = \$r2;
     $r2 = \$r1;
     my $c= sub {die};
     my $fh= gensym();
@@ -51,7 +51,7 @@ ok( dump_obj( $x ),'containing glob' );
     my $a1=[ 0..4, $h, $r1, $r2,$c,$fh,$gv ];
     $h->{array}=$a1;
     my $a2=[$a1,$h];
-    
+
     bless $_,'T' for $r1,$r2,$c,$fh,$gv,$h,$a1,$a2;
 
     my $o=Dump();

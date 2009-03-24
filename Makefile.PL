@@ -80,27 +80,28 @@ while (<$f>) {
 
 
 my $v=ExtUtils::MM_Unix->parse_version('lib/Data/Dump/Streamer.pm');
-if ($ENV{username} eq 'demerphq') {
-    system('SubWCRev . .build.tmpl .patch');
-}
-my $build;
-{ open my $fh,"<",".patch" or die "No '.patch' file!:$!";
-  chomp($b= <$fh>);
-  close $fh;
-};
-
-{package MY;
-sub distdir {
-    my $MM=shift;
-    my $orig= $MM->SUPER::distdir();
-    $orig=~s/^(\s+\$)/$1(PREOP)\n$1/m;
-    return $orig;
-}}
+#if ($ENV{username} eq 'demerphq') {
+#    system('SubWCRev . .build.tmpl .patch');
+#}
+#my $build;
+#{ open my $fh,"<",".patch" or die "No '.patch' file!:$!";
+#  chomp($b= <$fh>);
+#  close $fh;
+#};
+#
+#
+#{package MY;
+#sub distdir {
+#    my $MM=shift;
+#    my $orig= $MM->SUPER::distdir();
+#    $orig=~s/^(\s+\$)/$1(PREOP)\n$1/m;
+#    return $orig;
+#}}
 
 
 WriteMakefile(
     'NAME'         => 'Data::Dump::Streamer',
-    'VERSION'      => "$v-$b",    # finds $VERSION
+    'VERSION'      => "$v",    # finds $VERSION
     'PREREQ_PM'    => {
         #'Algorithm::Diff' => undef,
         #'Data::Dumper'    => undef,
@@ -126,7 +127,7 @@ WriteMakefile(
     dist => {
         COMPRESS => 'gzip -9f',
         SUFFIX => 'gz',
-        PREOP => 'SubWCRev . -n',
+        #PREOP => 'SubWCRev . -n',
 
     },
     @opts

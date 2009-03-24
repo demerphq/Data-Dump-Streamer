@@ -35,7 +35,7 @@ BEGIN{ $HasPadWalker=eval "use PadWalker 0.99; 1"; }
 
 BEGIN {
     #$Id: Streamer.pm 40 2007-12-22 00:37:55Z demerphq $#
-    $VERSION   ='2.08';
+    $VERSION   ='2.09';
     $XS_VERSION='2.07';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
@@ -736,7 +736,7 @@ sub DDumper {
 #sub _is_utf8 { length $_[0] != do { use bytes; length $_[0] } }
 
 BEGIN {
-    my $numeric_rex=qr/^-?(?:0|[1-9]\d*)(\.\d+(?<!0))?$/;
+    my $numeric_rex=qr/\A-?(?:0|[1-9]\d*)(\.\d+(?<!0))?\z/;
 
     # used by _qquote below
     my %esc = (
@@ -815,7 +815,7 @@ BEGIN {
         my $key = shift;
         if (!defined($key) or $key eq '') {
             return '""'
-        } elsif ($key=~$numeric_rex or $key =~ /^-?[A-Za-z_]\w*$/) {
+        } elsif ($key=~$numeric_rex or $key =~ /\A-?[A-Za-z_]\w*\z/) {
             return $key
         } else {
             _qquote($key);
@@ -1606,7 +1606,8 @@ PASS:{
                 # Code similar to that of CODE should go here I think.
             } else {
                 # IO?
-                Carp::confess "Data() can't handle '$reftype' objects yet\n :-(\n";
+                Carp::confess "Data() can't handle '$reftype' objects yet ($item)\n :-(\n"
+                    if $ENV{DDS_STRICT};
             }
             if ($isoverloaded) {
                 $item= bless $item, $overloaded;
@@ -2572,7 +2573,7 @@ sub _dump_array {
                          $self->{svt}[$self->{sv}{refaddr(\$item->[$k + $count])}]==1)
 
                     and !$v == !$item->[ $k + $count ]
-                    
+
                     and defined($v) == defined($item->[ $k + $count ])
                 )
 
@@ -2918,6 +2919,8 @@ sub _dump_rv {
     } elsif ($type eq 'FORMAT') {
         #$self->_dump_code($item,$name,$indent,$class); #muwhahahah
         $self->_dump_format($item,$name,$indent);
+    } elsif ($type eq 'IO') {
+        $self->{fh}->print("*{Symbol::gensym()}{IO}");
     } else {
          Carp::confess "_dump_rv() can't handle '$type' objects yet\n :-(\n";
     }

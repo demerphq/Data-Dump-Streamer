@@ -1,4 +1,4 @@
-use Test::More tests => 6;
+use Test::More tests => 7;
 
 #$Id: madness.t 26 2006-04-16 15:18:52Z demerphq $#
 
@@ -209,12 +209,70 @@ alias_av(@$ARRAY1, 1, $ARRAY1);
 $ARRAY1->[2] = $ARRAY1;
 EXPECT
 }
+{
+format STDOUT =
+@<<<<<<   @││││││   @>>>>>>
+"left",   "middle", "right"
+.
+
+    my %hash = (
+        UND => undef,
+        IV  => 1,
+        NV  => 3.14159265358979,
+        PV  => "string",
+        PV8 => "ab\ncd\x{20ac}\t",
+        PVM => $!,
+        RV  => \$.,
+        AR  => [ 1..2 ],
+        HR  => { key => "value" },
+        CR  => sub { "code"; },
+        GLB => *STDERR,
+        IO  => *{$::{STDERR}}{IO},
+        FMT => \*{$::{STDOUT}}{FORMAT},
+        OBJ => bless qr/("[^"]+")/,"Zorp",
+        );
+
+    same( $dump= $o->Data(\%hash)->Out, <<'EXPECT', "", $o);
+$HASH1 = {
+           AR  => [
+                    1,
+                    2
+                  ],
+           CR  => sub {
+                    use warnings;
+                    use strict 'refs';
+                    'code';
+                  },
+           FMT => \do{ local *F; my $F=<<'_EOF_FORMAT_'; $F=~s/^\s+# //mg; eval $F; die $F.$@ if $@; *F{FORMAT};
+                  # format F =
+                  # @<<<<<<   @││││││   @>>>>>>
+                  # 'left', 'middle', 'right'
+                  # .
+_EOF_FORMAT_
+                  },
+           GLB => *::STDERR,
+           HR  => { key => 'value' },
+           IO  => bless( *{Symbol::gensym()}{IO}, 'IO::Handle' ),
+           IV  => 1,
+           NV  => 3.14159265358979,
+           OBJ => bless( qr/("[^"]+")/, 'Zorp' ),
+           PV  => 'string',
+           PV8 => "ab\ncd\x{20ac}\t",
+           PVM => 'Bad file descriptor',
+           RV  => \do { my $v = undef },
+           UND => undef
+         };
+EXPECT
+
+}
 __END__
+
 # with eval testing
 {
     same( "", $o, <<'EXPECT', (  ) );
-
+EXPECT
 }
+
 # without eval testing
 {
     same( $dump = $o->Data()->Out, <<'EXPECT', "", $o );

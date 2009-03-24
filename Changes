@@ -1,4 +1,10 @@
-$Id: Changes 40 2007-12-22 00:37:55Z demerphq $
+2.09 (2009-03-24)
+
+Hashkeys ending in newline were incorrectly quoted. Sorry Ambrus.
+
+Make it possible to hackily dump *GLOB{IO} objects. This is mostly
+to make merijn happy. Afaik we dont have the information to do it
+properly.
 
 2.08 (2007-12-22 01:34:13)
 
@@ -17,10 +23,10 @@ build on the main Perls fine now.
 Finally got DDS running under blead/Perl 5.10
 
 Currently we duplicate code that is in Perl 5.10's Hash::Util (*),
-this code should not be compiled under Perl 5.10 and we should 
-just use Hash::Util instead. 
+this code should not be compiled under Perl 5.10 and we should
+just use Hash::Util instead.
 
-(*) Actually Hash::Util duplicates this code, but whatever, thats 
+(*) Actually Hash::Util duplicates this code, but whatever, thats
 called progress. :-)
 
 2.05 (2007-08-23 00:23:19)

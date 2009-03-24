@@ -1,4 +1,4 @@
-use Test::More tests => 48;
+use Test::More tests => 49;
 BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump Dump DumpLex DumpVars) ); }
 use strict;
 use warnings;
@@ -495,6 +495,17 @@ $HASH1={
        };
 EXPECT
 
+}
+# with eval testing
+{
+    my $h= { "blah\n" => 1,"blah\nblah\n" => 2, "blahblahblah\n\n" => 3 };
+    same( "hashkeys with newlines", $o, <<'EXPECT', ( $h ) );
+$HASH1={
+         "blah\n"          =>1,
+         "blah\nblah\n"    =>2,
+         "blahblahblah\n\n"=>3
+       };
+EXPECT
 }
 __END__
 # with eval testing

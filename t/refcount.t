@@ -3,8 +3,8 @@ use Devel::Peek;
 
 #$Id: refcount.t 26 2006-04-16 15:18:52Z demerphq $#
 
-BEGIN { use_ok( 'Data::Dump::Streamer', 
-            qw(refcount sv_refcount is_numeric looks_like_number weak_refcount weaken isweak)); 
+BEGIN { use_ok( 'Data::Dump::Streamer',
+            qw(refcount sv_refcount is_numeric looks_like_number weak_refcount weaken isweak));
 }
 
 my $sv="Foo";
@@ -30,7 +30,7 @@ SKIP: {
     is sv_refcount($sv),2,"weakened sv_refcount";
     is weak_refcount($sv),1,"weak_refcount";
     is refcount(\$sv),3,"weakened refcount";
-}           
+}
 
 {
     use strict;
@@ -38,12 +38,12 @@ SKIP: {
     my $iv=100;
     my $nv=1.234;
     my $dbl=1e40;
-    
+
     my %hash=(100=>1,1.234=>1,1e40=>1);
-    
-    for my $t ( [$sv,''], 
-                [$iv,1], [$nv,1], 
-                [$dbl,1], 
+
+    for my $t ( [$sv,''],
+                [$iv,1], [$nv,1],
+                [$dbl,1],
                 map {[$_,'']} keys %hash
     ){
         is is_numeric($t->[0]),$t->[1],"Test:".$t->[0];
