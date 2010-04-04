@@ -78,6 +78,24 @@ sub string_diff {
 
 sub capture { \@_ }
 
+sub _similar {
+    my ( $str1, $str2, $name, $obj ) = @_;
+
+    s/\s+$//gm for $str1,                          $str2;
+    s/\r\n/\n/g for $str1,                         $str2;
+    s/\(0x[0-9a-xA-X]+\)/(0xdeadbeef)/g for $str1, $str2;
+    my @vars = $str2 =~ m/^(?:my\s*)?(\$\w+)\s*=/gm;
+
+    #warn "@vars";
+    my $text = "\n" . $str1;
+    my $pat  = "\n" . $str2;
+
+    unless ( like( $text, $pat ) ) {
+use re qw( Debug EXECUTE );
+$text =~ $pat;
+        $obj->diag;
+    }
+}
 sub _same {
     my ( $str1, $str2, $name, $obj ) = @_;
 
@@ -166,6 +184,72 @@ sub normalize {
         $_[$_-1]=$x[$_-1] for 1..@_;
     }
     wantarray ? @x : $x[0]
+}
+
+sub similar {
+    goto &_similar unless ref( $_[1] );
+    my $name   = shift;
+    my $obj    = shift;
+    my ($expect,$result) = normalize(shift, scalar $obj->Data(@_)->Out());
+
+    my $main_pass = like( "\n$result", "\n$expect" );
+    if ( ! $main_pass ) {
+  use re qw( Debug EXECUTE );
+"\n$result" =~ "\n$expect";
+
+        $obj->diag;
+    }
+
+    my @declare=grep { /^[\$\@\%]/ } @{$obj->{declare}};
+
+    my @dump   =map  { /^[\@\%\&]/ ? "\\$_" : $_  } @{$obj->{out_names}};
+    my $dumpvars=join ( ",", @dump );
+
+    print $result,"\n" if $name=~/Test/;
+
+    my ($dumper,$error) = _dumper(\@_);
+    if ($error) {
+        diag( "$name\n$error" ) if $ENV{TEST_VERBOSE};
+    }
+    if ($dumper) {
+
+        my $result2_eval = $result . "\n" . 'scalar( $obj->Data(' . $dumpvars . ")->Out())\n";
+        my $dd_result_eval =
+          $result . "\nscalar(Data::Dumper->new("
+          . 'sub{\@_}->(' . $dumpvars . ")"
+          . ")->Purity(1)->Sortkeys(1)->Quotekeys(1)->"
+          . "Useperl(1)->Dump())\n";
+        unless ( $obj->Declare ) {
+            $dd_result_eval = "my(" . join ( ",", @declare ) . ");\n" . $dd_result_eval;
+            $result2_eval   = "my(" . join ( ",", @declare ) . ");\n" . $result2_eval;
+        }
+        foreach my $test ( [ "Data::Dumper", $dd_result_eval, $dumper ],
+                           [ "Data::Dump::Streamer", $result2_eval, $result ] ) {
+            my ( $test_name, $eval, $orig ) = @$test;
+
+            my ($warned,$res);
+            {
+                local $SIG{__WARN__}=sub { my $err=join ('',@_); $warned.=$err unless $err=~/^Subroutine|Encountered/};
+                $res  = eval $eval;
+                if ($warned) { print "Eval $test_name produced warnings:$warned\n$eval" };
+            }
+            normalize($res);
+            my $fail = 0;
+            if ($@) {
+                print join "\n", "Failed $test_name eval()", $eval, $@, "";
+                $fail = 1;
+            } elsif ( $res ne $orig ) {
+                print "Failed $test_name second time\n";
+                eval { print string_diff( $orig, $res, "Orig", "Result" ) };
+                print "Orig:\n$orig\nResult:\n$res\nEval:\n$eval\n";
+                $fail = 1;
+            }
+            $obj->diag if $fail;
+            return fail($name) if $fail;
+        }
+        #print join "\n",$result,$result2,$dumper,$dd_result,"";
+    }
+    ok( $main_pass, $name )
 }
 
 sub same {

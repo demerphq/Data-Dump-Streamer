@@ -233,7 +233,50 @@ format STDOUT =
         OBJ => bless qr/("[^"]+")/,"Zorp",
         );
 
-    same( $dump= $o->Data(\%hash)->Out, <<'EXPECT', "", $o);
+    # Dumping differences per perl version:
+    # 5.12.0+:
+    #
+    #   PerlIO doesn't set $! unnecessarily so now $! is more often ''
+    #   instead of the 'Bad file descriptor' found in earlier
+    #   versions.
+    #
+    #   IO handles are now blessed into IO::File, I guess?
+    #
+    if ( $] >= 5.012_000 ) {
+        same( $dump= $o->Data(\%hash)->Out, <<'EXPECT', "", $o);
+$HASH1 = {
+           AR  => [
+                    1,
+                    2
+                  ],
+           CR  => sub {
+                    use warnings;
+                    use strict 'refs';
+                    'code';
+                  },
+           FMT => \do{ local *F; my $F=<<'_EOF_FORMAT_'; $F=~s/^\s+# //mg; eval $F; die $F.$@ if $@; *F{FORMAT};
+                  # format F =
+                  # @<<<<<<   @││││││   @>>>>>>
+                  # 'left', 'middle', 'right'
+                  # .
+_EOF_FORMAT_
+                  },
+           GLB => *::STDERR,
+           HR  => { key => 'value' },
+           IO  => bless( *{Symbol::gensym()}{IO}, 'IO::File' ),
+           IV  => 1,
+           NV  => 3.14159265358979,
+           OBJ => bless( qr/("[^"]+")/, 'Zorp' ),
+           PV  => 'string',
+           PV8 => "ab\ncd\x{20ac}\t",
+           PVM => '',
+           RV  => \do { my $v = undef },
+           UND => undef
+         };
+EXPECT
+    }
+    else {
+        same( $dump= $o->Data(\%hash)->Out, <<'EXPECT', "", $o);
 $HASH1 = {
            AR  => [
                     1,
@@ -259,12 +302,12 @@ _EOF_FORMAT_
            OBJ => bless( qr/("[^"]+")/, 'Zorp' ),
            PV  => 'string',
            PV8 => "ab\ncd\x{20ac}\t",
-           PVM => '',
+           PVM => 'Bad file descriptor',
            RV  => \do { my $v = undef },
            UND => undef
          };
 EXPECT
-
+    }
 }
 __END__
 
