@@ -35,7 +35,7 @@ BEGIN{ $HasPadWalker=eval "use PadWalker 0.99; 1"; }
 
 BEGIN {
     #$Id: Streamer.pm 40 2007-12-22 00:37:55Z demerphq $#
-    $VERSION   ='2.09';
+    $VERSION   ='2.10';
     $XS_VERSION='2.07';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
@@ -2921,6 +2921,9 @@ sub _dump_rv {
         $self->_dump_format($item,$name,$indent);
     } elsif ($type eq 'IO') {
         $self->{fh}->print("*{Symbol::gensym()}{IO}");
+    } elsif ($type eq 'ORANGE' || $type eq 'Regexp' || $type eq 'REGEXP') {
+        my ($pat,$mod)=regex($item);
+        $self->_dump_qr($pat,$mod);
     } else {
          Carp::confess "_dump_rv() can't handle '$type' objects yet\n :-(\n";
     }

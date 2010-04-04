@@ -210,6 +210,7 @@ $ARRAY1->[2] = $ARRAY1;
 EXPECT
 }
 {
+    undef $!;
 format STDOUT =
 @<<<<<<   @││││││   @>>>>>>
 "left",   "middle", "right"
@@ -221,7 +222,7 @@ format STDOUT =
         NV  => 3.14159265358979,
         PV  => "string",
         PV8 => "ab\ncd\x{20ac}\t",
-        PVM => $!,
+        PVM => "$!",
         RV  => \$.,
         AR  => [ 1..2 ],
         HR  => { key => "value" },
@@ -258,7 +259,7 @@ _EOF_FORMAT_
            OBJ => bless( qr/("[^"]+")/, 'Zorp' ),
            PV  => 'string',
            PV8 => "ab\ncd\x{20ac}\t",
-           PVM => 'Bad file descriptor',
+           PVM => '',
            RV  => \do { my $v = undef },
            UND => undef
          };

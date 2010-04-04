@@ -1,3 +1,9 @@
+2.10 (2010-04-04)
+
+Perl-5.12.0 has:
+  - qr// as a native
+  - $! isn't auto-filled with garbage as often
+
 2.09 (2009-03-24)
 
 Hashkeys ending in newline were incorrectly quoted. Sorry Ambrus.
