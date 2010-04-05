@@ -1,3 +1,7 @@
+2.12 (2010-04-05)
+
+Removed re.pm debugging code (which also broke compat w/ perl-5.8
+
 2.11 (2010-04-04)
 
 perl-5.12.0 blesses file handles into IO::File, not IO::Handle

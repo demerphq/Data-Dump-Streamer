@@ -91,8 +91,14 @@ sub _similar {
     my $pat  = "\n" . $str2;
 
     unless ( like( $text, $pat ) ) {
-use re qw( Debug EXECUTE );
-$text =~ $pat;
+        if ( $] >= 5.012 ) {
+            eval qq{
+                use re qw( Debug EXECUTE );
+                \$text =~ \$pat;
+                1;
+            }
+              or die $@;
+        }
         $obj->diag;
     }
 }

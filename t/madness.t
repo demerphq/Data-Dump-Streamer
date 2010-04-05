@@ -236,10 +236,6 @@ format STDOUT =
     # Dumping differences per perl version:
     # 5.12.0+:
     #
-    #   PerlIO doesn't set $! unnecessarily so now $! is more often ''
-    #   instead of the 'Bad file descriptor' found in earlier
-    #   versions.
-    #
     #   IO handles are now blessed into IO::File, I guess?
     #
     if ( $] >= 5.012_000 ) {
@@ -302,7 +298,7 @@ _EOF_FORMAT_
            OBJ => bless( qr/("[^"]+")/, 'Zorp' ),
            PV  => 'string',
            PV8 => "ab\ncd\x{20ac}\t",
-           PVM => 'Bad file descriptor',
+           PVM => '',
            RV  => \do { my $v = undef },
            UND => undef
          };
