@@ -1,3 +1,7 @@
+2.13 (2010-04-05)
+
+No really, *actually* removed re.pm debugging code
+
 2.12 (2010-04-05)
 
 Removed re.pm debugging code (which also broke compat w/ perl-5.8

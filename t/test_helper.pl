@@ -200,9 +200,6 @@ sub similar {
 
     my $main_pass = like( "\n$result", "\n$expect" );
     if ( ! $main_pass ) {
-  use re qw( Debug EXECUTE );
-"\n$result" =~ "\n$expect";
-
         $obj->diag;
     }
 

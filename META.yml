@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                Data-Dump-Streamer
-version:             2.12
+version:             2.13
 abstract:            Accurately serialize a data structure as Perl code.
 license:             ~
 author:              
