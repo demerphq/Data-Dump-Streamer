@@ -488,6 +488,7 @@ EXPECT
 }
 {
     my $h={'-'=>1,'-1efg'=>1};
+    $o->OptSpace("");
     same( "'-' hashkeys", $o, <<'EXPECT', ( $h ) );
 $HASH1={
          "-1efg"=>1,

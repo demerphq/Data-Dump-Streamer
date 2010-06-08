@@ -28,6 +28,27 @@ sub DDS {
 EOF_DDS
 }
 
+{
+    my $B_Utils_required = 0.05;
+    eval {
+        require B::Utils;
+    };
+    if ( $@ or B::Utils->VERSION < $B_Utils_required ) {
+
+        # If I don't have B::Utils then I must have ExtUtils::Depends
+        my $ExtUtils_Depends_required = 0.302; #minimum version that works on Win32+gcc
+        eval {
+            require ExtUtils::Depends;
+        };
+        if ( $@ or ExtUtils::Depends->VERSION < $ExtUtils_Depends_required ) {
+            print "ExtUtils::Depends $ExtUtils_Depends_required is required to configure our B::Utils dependency, please install it manually or upgrade your CPAN/CPANPLUS shell\n";
+            exit(0);
+        }        
+    };
+}
+
+
+
 print "Installing Data::Dump::Streamer\n";
 my ($override,$value);
 $override= $ARGV[0]=~/^(?:NO)?DDS$/i ? shift @ARGV : undef;

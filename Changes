@@ -1,3 +1,13 @@
+2.14 (2010-06-08)
+
+Our Makefile.PL must abort if we're going to need to build B::Utils
+but we don't have ExtUtils::Depends because it doesn't work to let the
+build chain do this dependency resolution. Perhaps there is a version
+that this all "just works" in?
+
+t/dump.t required some styling state changes but was skipping them
+when some modules weren't installed.
+
 2.13 (2010-04-05)
 
 No really, *actually* removed re.pm debugging code
