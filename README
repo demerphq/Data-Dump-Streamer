@@ -1,12 +1,10 @@
 INSTALLATION
     To install this module type the following:
 
-      perl Makefile.PL
-      make
-      make test
-      make install
-
-    On Win32 systems change make to nmake or dmake as appropriate.
+      perl Build.PL
+      ./Build
+      ./Build test
+      ./Build install
 
     The modules requires a functional C compiler, however PPM support
     for Win32 users will also be available sometime soon.
@@ -18,9 +16,8 @@ INSTALLATION
 DEPENDENCIES
     This module requires these other modules and libraries:
 
-      Text::Balanced
-      Test::More
-      B::Deparse
+      Module::Build
+      ExtUtils::Depends
       B::Utils
 
     and optionally for enhanced testing
@@ -41,4 +38,3 @@ AUTHOR AND COPYRIGHT
     Contains code derived from works by Gisle Aas, Graham Barr,
     Jeff Pinyan, Richard Clamp, and Gurusamy Sarathy as well as
     material taken from the core.
-

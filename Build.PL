@@ -19,45 +19,46 @@ my $build = My::Builder->new(
     },
     build_requires => {
         # Core modules
-        'B::Deparse'   => 0,
-        'Carp'         => 0,
-        'Config'       => 0,
-        'Data::Dumper' => 0,
-        'Devel::Peek'  => 0,
-        'Symbol'       => 0,
-        'Test::More'   => 0,
-        'Text::Abbrev' => 0,
-        'base'         => 0,
-        'overload'     => 0,
-        'strict'       => 0,
-        'utf8'         => 0,
-        'vars'         => 0,
-        'warnings'     => 0,
+        'B::Deparse'         => 0,
+        'Carp'               => 0,
+        'Config'             => 0,
+        'Data::Dumper'       => 0,
+        'Devel::Peek'        => 0,
+        'ExtUtils::CBuilder' => 0,
+        'Symbol'             => 0,
+        'Test::More'         => 0,
+        'Text::Abbrev'       => 0,
+        'base'               => 0,
+        'overload'           => 0,
+        'strict'             => 0,
+        'utf8'               => 0,
+        'vars'               => 0,
+        'warnings'           => 0,
         $] >= 5.012
-            ? ( re => 0 )
+            ? ( 're' => 0 )
             : (),
     },
     requires => {
-        'B' => 0,
-        'B::Deparse' => 0,
-        'B::Utils' => 0,
-        'Data::Dumper' => 0,
-        'DynaLoader' => 0,
-        'Exporter' => 0,
-        'IO::File' => 0,
-        'Symbol' => 0,
-        'Text::Abbrev' => 0,
+        'B'              => 0,
+        'B::Deparse'     => 0,
+        'B::Utils'       => 0,
+        'Data::Dumper'   => 0,
+        'DynaLoader'     => 0,
+        'Exporter'       => 0,
+        'IO::File'       => 0,
+        'Symbol'         => 0,
+        'Text::Abbrev'   => 0,
         'Text::Balanced' => 0,
-        'overload' => 0,
-        'strict' => 0,
-        'vars' => 0,
-        'warnings' => 0,
+        'overload'       => 0,
+        'strict'         => 0,
+        'vars'           => 0,
+        'warnings'       => 0,
         'warnings::register' => 0,
         $] >= 5.009_004
-            ? ( re => 0 )
+            ? ( 're' => 0 )
             : (),
         $] >= 5.008
-            ? ( Hash::Util => 0 )
+            ? ( 'Hash::Util' => 0 )
             : (),
 
         # CPAN
@@ -72,7 +73,7 @@ my $build = My::Builder->new(
 
         # CPAN
         'Algorithm::Diff' => 0,
-        'PadWalker' => '0.99',
+        'PadWalker'       => '0.99',
     },
 );
 $build->create_build_script();
