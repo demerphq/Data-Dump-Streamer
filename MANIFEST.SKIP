@@ -20,6 +20,14 @@
 \bBuild$
 \b_build/
 
+^Build$
+
+^\.git/
+
+^lib/Data/Dump/Streamer\.o$
+^lib/Data/Dump/Streamer\.c$
+^lib/Data/Dump/Streamer\.bs$
+
 # Avoid temp and backup files.
 ~$
 \.old$
@@ -38,3 +46,4 @@
 DDS\.pm
 \.(bs|c|def|obj|pdb)$
 ^dds\w+\.pl
+^MYMETA.yml$

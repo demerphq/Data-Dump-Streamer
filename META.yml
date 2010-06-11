@@ -1,24 +1,62 @@
---- #YAML:1.0
-name:               Data-Dump-Streamer
-version:            2.14
-abstract:           Accurately serialize a data structure as Perl code.
-author:
-    - Yves Orton (demerphq)
-license:            unknown
-distribution_type:  module
+---
+abstract: 'Accurately serialize a data structure as Perl code.'
+author: []
+build_requires:
+  B::Deparse: 0
+  Carp: 0
+  Config: 0
+  Data::Dumper: 0
+  Devel::Peek: 0
+  ExtUtils::CBuilder: 0
+  Symbol: 0
+  Test::More: 0
+  Text::Abbrev: 0
+  base: 0
+  overload: 0
+  re: 0
+  strict: 0
+  utf8: 0
+  vars: 0
+  warnings: 0
 configure_requires:
-    ExtUtils::MakeMaker:  0
-requires:
-    B::Deparse:      0
-    B::Utils:        0.05
-    Test::More:      0
-    Text::Abbrev:    0
-    Text::Balanced:  0
-no_index:
-    directory:
-        - t
-        - inc
-generated_by:       ExtUtils::MakeMaker version 6.48
+  ExtUtils::Depends: 0
+  Module::Build: 0
+  perl: 5.006
+generated_by: 'Module::Build version 0.3603'
+license: perl
 meta-spec:
-    url:      http://module-build.sourceforge.net/META-spec-v1.4.html
-    version:  1.4
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+name: Data-Dump-Streamer
+provides:
+  Data::Dump::Streamer:
+    file: lib/Data/Dump/Streamer.pm
+    version: 2.15
+  Data::Dump::Streamer::Deparser:
+    file: lib/Data/Dump/Streamer.pm
+recommends:
+  Algorithm::Diff: 0
+  Compress::Zlib: 0
+  MIME::Base64: 0
+  PadWalker: 0.99
+requires:
+  B: 0
+  B::Deparse: 0
+  B::Utils: 0
+  Data::Dumper: 0
+  DynaLoader: 0
+  Exporter: 0
+  Hash::Util: 0
+  IO::File: 0
+  Symbol: 0
+  Text::Abbrev: 0
+  Text::Balanced: 0
+  overload: 0
+  re: 0
+  strict: 0
+  vars: 0
+  warnings: 0
+  warnings::register: 0
+resources:
+  license: http://dev.perl.org/licenses/
+version: 2.15

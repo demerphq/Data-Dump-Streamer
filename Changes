@@ -1,3 +1,11 @@
+2.15 (2010-06-11)
+
+Perl commit "538f5756c002f0583190831238bbf6bd54855cdc shift;
+optimization" changed B::Deparse
+
+Switch from ExtUtils::MakeMaker to Module::Build for
+configure_requires support
+
 2.14 (2010-06-08)
 
 Our Makefile.PL must abort if we're going to need to build B::Utils

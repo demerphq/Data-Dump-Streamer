@@ -1,14 +1,15 @@
 .patch
+Build.PL
 Changes
+inc/My/Builder.pm
 INSTALL.SKIP
+lib/Data/Dump/Streamer.pm
+lib/Data/Dump/Streamer.xs
+lib/Data/Dump/Streamer/_/Printers.pm
 MANIFEST			This list of files
 MANIFEST.SKIP
 META.yml
-Makefile.PL
 README
-Streamer.xs
-lib/Data/Dump/Streamer.pm
-lib/Data/Dump/Streamer/_/Printers.pm
 t/as.t
 t/blessed.t
 t/dogpound.t

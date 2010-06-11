@@ -42,7 +42,45 @@ $::No_Dumper=$::No_Dumper=1;
 
 
 {
-    test_dump( 'Lexicals!!', scalar(Dump()), ( get_sub() ), <<'EXPECT');
+    my $expect;
+    if ( $] >= 5.013_000 ) {
+        $expect = <<'EXPECT';
+my ($x,$z,@v,@y,@y_eclipse_1);
+$x = 'f o o 1 foo 1';
+$z = 1;
+@v = (
+       'f',
+       ( 'o' ) x 2,
+       1
+     );
+@y = (
+       'b',
+       'a',
+       'r'
+     );
+@y_eclipse_1 = (
+                 'f',
+                 'u',
+                 ( 'z' ) x 2
+               );
+$CODE1 = sub {
+           my(@y) = ($x, ('A', 'B', 'C', 'D', 'E', 'F', 'G'), @y);
+           my(@v) = (('M', 'N', 'O', 'P', 'Q', 'R'), @v);
+           my $x = join(':', @y, @v, $z || 'undef');
+           $x . '!!';
+         };
+$CODE2 = sub {
+           $x = shift();
+           $z = shift() if @_;
+         };
+$CODE3 = sub {
+           return join('+', $z, $x, @y_eclipse_1);
+         };
+
+EXPECT
+    }
+    else {
+        $expect = <<'EXPECT';
 my ($x,$z,@v,@y,@y_eclipse_1);
 $x = 'f o o 1 foo 1';
 $z = 1;
@@ -76,6 +114,9 @@ $CODE3 = sub {
          };
 
 EXPECT
+    }
+
+    test_dump( 'Lexicals!!', scalar(Dump()), ( get_sub() ), $expect);
 }
 
 {

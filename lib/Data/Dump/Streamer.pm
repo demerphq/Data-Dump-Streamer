@@ -20,7 +20,6 @@ use warnings::register;
 require overload;
 use vars qw(
              $VERSION
-             $XS_VERSION
              $AUTOLOAD
              @ISA
              @EXPORT @EXPORT_OK @EXPORT_FAIL %EXPORT_TAGS
@@ -35,8 +34,7 @@ BEGIN{ $HasPadWalker=eval "use PadWalker 0.99; 1"; }
 
 BEGIN {
     #$Id: Streamer.pm 40 2007-12-22 00:37:55Z demerphq $#
-    $VERSION   ='2.14';
-    $XS_VERSION='2.07';
+    $VERSION   ='2.15';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
     @EXPORT=qw(Dump DumpLex DumpVars);
@@ -124,7 +122,7 @@ BEGIN {
     sub alias_to { return shift }
 
     #warn $VERSION;
-    Data::Dump::Streamer->bootstrap($XS_VERSION);
+    Data::Dump::Streamer->bootstrap();
     if ($]>=5.009004) {
         eval q[
             use re qw(regexp_pattern);
