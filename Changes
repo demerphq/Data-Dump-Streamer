@@ -1,3 +1,8 @@
+2.16 (2010-06-11)
+
+Manually add VERSION to Data::Dump::Streamer::Deparser to make CPAN
+indexer happy.
+
 2.15 (2010-06-11)
 
 Perl commit "538f5756c002f0583190831238bbf6bd54855cdc shift;
