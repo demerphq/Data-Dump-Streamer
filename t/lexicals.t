@@ -43,7 +43,7 @@ $::No_Dumper=$::No_Dumper=1;
 
 {
     my $expect;
-    if ( $] >= 5.013_000 ) {
+    if ( $] >= 5.013_001 ) {
         $expect = <<'EXPECT';
 my ($x,$z,@v,@y,@y_eclipse_1);
 $x = 'f o o 1 foo 1';

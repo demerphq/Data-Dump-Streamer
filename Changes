@@ -1,3 +1,13 @@
+2.18 (2010-06-12)
+
+Continue to refine t/lexicals.t response to Perl commit
+"e02c0f79a8059eaf4981f798cc21d7dc3c8b916e shift; optimization". The
+change happened after 5.13.0 and is released in 5.13.1.
+
+2.17 (2010-06-11)
+
+Declare ExtUtils::CBuilder as a build_requries dependency
+
 2.16 (2010-06-11)
 
 Manually add VERSION to Data::Dump::Streamer::Deparser to make CPAN
