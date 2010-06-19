@@ -31,7 +31,7 @@ name: Data-Dump-Streamer
 provides:
   Data::Dump::Streamer:
     file: lib/Data/Dump/Streamer.pm
-    version: 2.18
+    version: 2.19
   Data::Dump::Streamer::Deparser:
     file: lib/Data/Dump/Streamer.pm
     version: 2.18
@@ -60,4 +60,4 @@ requires:
   warnings::register: 0
 resources:
   license: http://dev.perl.org/licenses/
-version: 2.18
+version: 2.19

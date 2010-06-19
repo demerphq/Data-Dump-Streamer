@@ -271,7 +271,7 @@ _EOF_FORMAT_
          };
 EXPECT
     }
-    else {
+    elsif ( $] >= 5.008_008 ) {
         same( $dump= $o->Data(\%hash)->Out, <<'EXPECT', "", $o);
 $HASH1 = {
            AR  => [
@@ -280,6 +280,39 @@ $HASH1 = {
                   ],
            CR  => sub {
                     use warnings;
+                    use strict 'refs';
+                    'code';
+                  },
+           FMT => \do{ local *F; my $F=<<'_EOF_FORMAT_'; $F=~s/^\s+# //mg; eval $F; die $F.$@ if $@; *F{FORMAT};
+                  # format F =
+                  # @<<<<<<   @││││││   @>>>>>>
+                  # 'left', 'middle', 'right'
+                  # .
+_EOF_FORMAT_
+                  },
+           GLB => *::STDERR,
+           HR  => { key => 'value' },
+           IO  => bless( *{Symbol::gensym()}{IO}, 'IO::Handle' ),
+           IV  => 1,
+           NV  => 3.14159265358979,
+           OBJ => bless( qr/("[^"]+")/, 'Zorp' ),
+           PV  => 'string',
+           PV8 => "ab\ncd\x{20ac}\t",
+           PVM => '',
+           RV  => \do { my $v = undef },
+           UND => undef
+         };
+EXPECT
+    }
+    else {
+        same( $dump= $o->Data(\%hash)->Out, <<'EXPECT', "", $o);
+$HASH1 = {
+           AR  => [
+                    1,
+                    2
+                  ],
+           CR  => sub {
+                    BEGIN {${^WARNING_BITS} = "UUUUUUUUUUUU\001"}
                     use strict 'refs';
                     'code';
                   },
