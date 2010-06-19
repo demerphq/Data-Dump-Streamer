@@ -1,3 +1,10 @@
+2.21 (2010-06-19)
+
+Resynchronize internal VERSION declarations.
+
+Skipped v2.20 because it some of the build code was truncating it to
+v2.2 and breaking
+
 2.19 (2010-06-19)
 
 Tweak t/madness.t to deal with how perl-5.8.[0-8] deparses the pragma
