@@ -1,4 +1,5 @@
 #!perl
+
 use 5.006_000;
 BEGIN {
     push @INC, 'inc';

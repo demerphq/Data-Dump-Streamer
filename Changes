@@ -1,9 +1,15 @@
+2.22 (2010-07-11)
+
+Build.PL fixed to accept DDS and NODDS again
+
 2.21 (2010-06-19)
 
-Resynchronize internal VERSION declarations.
+Resynchronize internal VERSION declarations
 
-Skipped v2.20 because it some of the build code was truncating it to
-v2.2 and breaking
+2.20
+
+Skipped version 2.20 because version numbers don't play nice when they
+end in zeros.
 
 2.19 (2010-06-19)
 
