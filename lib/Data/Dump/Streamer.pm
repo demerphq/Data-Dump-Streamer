@@ -34,7 +34,7 @@ BEGIN{ $HasPadWalker=eval "use PadWalker 0.99; 1"; }
 
 BEGIN {
     #$Id: Streamer.pm 40 2007-12-22 00:37:55Z demerphq $#
-    $VERSION   ='2.22';
+    $VERSION   ='2.23';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
     @EXPORT=qw(Dump DumpLex DumpVars);
@@ -231,6 +231,8 @@ sub import {
 #
 # Anyway, its terribly ugly, but for anything I can think to throw at it it works.
 # demerphq
+
+=encoding utf8
 
 =head1 NAME
 
@@ -1171,7 +1173,7 @@ sub DumpLex {
         return $obj;
     } else {
         $obj||=__PACKAGE__;
-        return $obj->Data(@_)->Names(@names)->Out();
+        return $obj->Names(@names)->Data(@_)->Out();
     }
 }
 
@@ -3004,7 +3006,7 @@ sub Names {
                 Carp::confess "Bad name '$_'"
                    if $s && $s!~/^\*?\w+$/;
                 $s
-            } @$v ];
+            } grep {defined} @$v ];
         return $self;
     } elsif (! defined wantarray ) {
         $self->{unames}=[];
@@ -3669,7 +3671,7 @@ use B::Deparse;
 our @ISA=qw(B::Deparse);
 my %cache;
 
-our $VERSION = '2.22';
+our $VERSION = '2.23';
 if ( $VERSION ne $Data::Dump::Streamer::VERSION ) {
     die "Incompatible Data::Dump::Streamer::Deparser v$VERSION vs Data::Dump::Streamer v$Data::Dump::Streamer::VERSION";
 }
@@ -3862,9 +3864,9 @@ under the same terms as Perl itself.
 Contains code derived from works by Gisle Aas, Graham Barr, Jeff Pinyan,
 Richard Clamp, and Gurusamy Sarathy.
 
-Thanks to Dan Brook, Yitzchak Scott-Thoennes, eric256, Joshua ben Jore,
-Jim Cromie, Curtis "Ovid" Poe and anybody that I've forgotten for patches,
-feedback and ideas.
+Thanks to Dan Brook, Yitzchak Scott-Thoennes, eric256, Joshua ben
+Jore, Jim Cromie, Curtis "Ovid" Poe, Lars Dɪᴇᴄᴋᴏᴡ, and anybody that
+I've forgotten for patches, feedback and ideas.
 
 =head1 SEE ALSO (its a crowded space, isn't it!)
 
