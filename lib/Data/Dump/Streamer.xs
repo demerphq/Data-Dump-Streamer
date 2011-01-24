@@ -32,18 +32,19 @@ extern "C" {
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
+#include "ppport.h"
 #ifdef __cplusplus
 }
 #endif
 
 #ifndef PERL_VERSION
 #    include <patchlevel.h>
-#    if !(defined(PERL_VERSION) || (SUBVERSION > 0 && defined(PATCHLEVEL)))
+#    if !(defined(PERL_VERSION) || (PERL_SUBVERSION > 0 && defined(PATCHLEVEL)))
 #        include <could_not_find_Perl_patchlevel.h>
 #    endif
 #    define PERL_REVISION	5
 #    define PERL_VERSION	PATCHLEVEL
-#    define PERL_SUBVERSION	SUBVERSION
+#    define PERL_SUBVERSION	PERL_SUBVERSION
 #endif
 #if PERL_VERSION < 8
 #   define PERL_MAGIC_qr		  'r' /* precompiled qr// regex */
@@ -74,8 +75,13 @@ extern "C" {
         if( SvMAGICAL(sv)                               \
             && (mg = mg_find(sv, PERL_MAGIC_backref) )  \
         ){                                              \
-            AV *av = (AV *)mg->mg_obj;                  \
-            RETVAL += av_len(av)+1;                     \
+            SV **svp = (SV**)mg->mg_obj;                \
+            if (svp && *svp) {                          \
+                RETVAL +=                               \
+                    SvTYPE(*svp) == SVt_PVAV            \
+                    ? av_len((AV*)*svp)+1               \
+                    : 1;                                \
+            }                                           \
         }                                               \
     } while (0)
 #else
