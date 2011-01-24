@@ -22,7 +22,7 @@ configure_requires:
   ExtUtils::Depends: 0
   Module::Build: 0
   perl: 5.006
-generated_by: 'Module::Build version 0.3607'
+generated_by: 'Module::Build version 0.3603'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -31,10 +31,10 @@ name: Data-Dump-Streamer
 provides:
   Data::Dump::Streamer:
     file: lib/Data/Dump/Streamer.pm
-    version: 2.24
+    version: 2.25
   Data::Dump::Streamer::Deparser:
     file: lib/Data/Dump/Streamer.pm
-    version: 2.24
+    version: 2.25
 recommends:
   Algorithm::Diff: 0
   Compress::Zlib: 0
@@ -60,4 +60,4 @@ requires:
   warnings::register: 0
 resources:
   license: http://dev.perl.org/licenses/
-version: 2.24
+version: 2.25

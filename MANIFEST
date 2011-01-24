@@ -3,6 +3,7 @@ Build.PL
 Changes
 inc/My/Builder.pm
 INSTALL.SKIP
+lib/Data/Dump/ppport.h
 lib/Data/Dump/Streamer.pm
 lib/Data/Dump/Streamer.xs
 lib/Data/Dump/Streamer/_/Printers.pm

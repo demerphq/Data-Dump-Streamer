@@ -1,3 +1,6 @@
+2.25 (2011-01-24)
+Oops, add ppport.h to the packaged distribution
+
 2.24 (2011-01-23)
 Fix weakref breakage from perl-5648c0a. [RT #62605]
 Add ppport.h
