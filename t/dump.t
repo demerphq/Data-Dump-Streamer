@@ -401,15 +401,20 @@ ${${$REF1}->[0]} = \${$REF1}->[3];
 EXPECT
 }
 {
+    my $expect = $] >= 5.013_008 ? <<'U_FLAG' : <<'NO_U_FLAG';
+$VAR1 = "This contains unicode: /\x{263a}/";
+$Regexp1 = qr!This contains unicode: /\x{263a}/!u;
+U_FLAG
+$VAR1 = "This contains unicode: /\x{263a}/";
+$Regexp1 = qr!This contains unicode: /\x{263a}/!;
+NO_U_FLAG
+
     use utf8;
     my $r = "This contains unicode: /\x{263A}/";
     my $qr= qr/$r/;
     test_dump( {name=>"Unicode qr// and string",
                 no_dumper => 1, verbose => 1 }, $o, ( $r,$qr ),
-               <<'EXPECT',  );
-$VAR1 = "This contains unicode: /\x{263a}/";
-$Regexp1 = qr!This contains unicode: /\x{263a}/!;
-EXPECT
+               $expect);
 }
 {
     use utf8;

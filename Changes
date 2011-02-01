@@ -1,3 +1,8 @@
+2.27
+Test for new regexp /u flag [RT #65339]
+Import less private functions
+Removed obsolete svn version info
+
 2.26
 Keep a glob reference open while inspecting through it with B. [RT #65272]
 

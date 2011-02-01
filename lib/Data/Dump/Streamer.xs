@@ -1,8 +1,6 @@
 /*
  * Streamer.xs
  *
- * $Id: Streamer.xs 39 2007-12-22 00:11:22Z demerphq $
- *
  * Code from Array::RefElem
  * Copyright (c) 1997-2000 Graham Barr <gbarr@pobox.com>. All rights reserved.
  * This program is free software; you can redistribute it and/or

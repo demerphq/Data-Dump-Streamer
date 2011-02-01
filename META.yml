@@ -31,10 +31,10 @@ name: Data-Dump-Streamer
 provides:
   Data::Dump::Streamer:
     file: lib/Data/Dump/Streamer.pm
-    version: 2.26
+    version: 2.27
   Data::Dump::Streamer::Deparser:
     file: lib/Data/Dump/Streamer.pm
-    version: 2.26
+    version: 2.27
 recommends:
   Algorithm::Diff: 0
   Compress::Zlib: 0
@@ -60,4 +60,4 @@ requires:
   warnings::register: 0
 resources:
   license: http://dev.perl.org/licenses/
-version: 2.26
+version: 2.27
