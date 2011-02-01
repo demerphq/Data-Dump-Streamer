@@ -1,3 +1,6 @@
+2.26
+Keep a glob reference open while inspecting through it with B. [RT #65272]
+
 2.25 (2011-01-24)
 Oops, add ppport.h to the packaged distribution
 

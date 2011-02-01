@@ -34,7 +34,7 @@ BEGIN{ $HasPadWalker=eval "use PadWalker 0.99; 1"; }
 
 BEGIN {
     #$Id: Streamer.pm 40 2007-12-22 00:37:55Z demerphq $#
-    $VERSION   ='2.25';
+    $VERSION   ='2.26';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
     @EXPORT=qw(Dump DumpLex DumpVars);
@@ -1875,7 +1875,13 @@ sub _dump_apply_fix { #handle fix statements and GLOB's here.
             ) {
                 # from link from [ysth]: http://groups.google.com/groups?selm=laUs8gzkgOlT092yn%40efn.org
                 # translate arg (or reference to it) into a B::* object
-                my $Bobj = B::svref_2object(\*$lhs);
+
+                # To work-around perl commit
+                # 2acc3314e31a9342e325f35c5b592967c9850c9b, keep the
+                # value \*$lhs alive while we inspect it as a B object
+                # or else it'll be reaped while we're using it.
+                my $lhs_glob = \*$lhs;
+                my $Bobj = B::svref_2object($lhs_glob);
 
                 # if passed a glob or globref, get the format
                 $Bobj = B::GV::FORM($Bobj) if ref $Bobj eq 'B::GV';
@@ -3671,7 +3677,7 @@ use B::Deparse;
 our @ISA=qw(B::Deparse);
 my %cache;
 
-our $VERSION = '2.25';
+our $VERSION = '2.26';
 if ( $VERSION ne $Data::Dump::Streamer::VERSION ) {
     die "Incompatible Data::Dump::Streamer::Deparser v$VERSION vs Data::Dump::Streamer v$Data::Dump::Streamer::VERSION";
 }
