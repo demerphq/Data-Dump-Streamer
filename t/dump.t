@@ -401,7 +401,7 @@ ${${$REF1}->[0]} = \${$REF1}->[3];
 EXPECT
 }
 {
-    my $expect = $] >= 5.013_008 ? <<'U_FLAG' : <<'NO_U_FLAG';
+    my $expect = $] >= 5.013_010 ? <<'U_FLAG' : <<'NO_U_FLAG';
 $VAR1 = "This contains unicode: /\x{263a}/";
 $Regexp1 = qr!This contains unicode: /\x{263a}/!u;
 U_FLAG

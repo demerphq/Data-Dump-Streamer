@@ -1,3 +1,7 @@
+2.28
+Strip illegal regexp modifiers [RT #65355]
+Update file permissions
+
 2.27
 Test for new regexp /u flag [RT #65339]
 Import less private functions
