@@ -216,6 +216,16 @@ format STDOUT =
 "left",   "middle", "right"
 .
 
+    my $expected_dot;
+    if ( defined $. && length $. ) {
+        $expected_dot = $.;
+    }
+    elsif ( defined $. ) {
+        $expected_dot = "''";
+    }
+    else {
+        $expected_dot = 'undef';
+    }
     my %hash = (
         UND => undef,
         IV  => 1,
@@ -239,7 +249,7 @@ format STDOUT =
     #   IO handles are now blessed into IO::File, I guess?
     #
     if ( $] >= 5.012_000 ) {
-        same( $dump= $o->Data(\%hash)->Out, <<'EXPECT', "", $o);
+        same( $dump= $o->Data(\%hash)->Out, template( <<'EXPECT', expected_dot => $expected_dot ), "", $o);
 $HASH1 = {
            AR  => [
                     1,
@@ -266,13 +276,13 @@ _EOF_FORMAT_
            PV  => 'string',
            PV8 => "ab\ncd\x{20ac}\t",
            PVM => '',
-           RV  => \do { my $v = undef },
+           RV  => \do { my $v = expected_dot },
            UND => undef
          };
 EXPECT
     }
     elsif ( $] >= 5.008_008 ) {
-        same( $dump= $o->Data(\%hash)->Out, <<'EXPECT', "", $o);
+        same( $dump= $o->Data(\%hash)->Out, template( <<'EXPECT', expected_dot => $expected_dot ), "", $o);
 $HASH1 = {
            AR  => [
                     1,
@@ -299,13 +309,13 @@ _EOF_FORMAT_
            PV  => 'string',
            PV8 => "ab\ncd\x{20ac}\t",
            PVM => '',
-           RV  => \do { my $v = undef },
+           RV  => \do { my $v = expected_dot },
            UND => undef
          };
 EXPECT
     }
     elsif ( $] >= 5.008_000 ) {
-        same( $dump= $o->Data(\%hash)->Out, <<'EXPECT', "", $o);
+        same( $dump= $o->Data(\%hash)->Out, template( <<'EXPECT', expected_dot => $expected_dot ), "", $o);
 $HASH1 = {
            AR  => [
                     1,
@@ -332,13 +342,13 @@ _EOF_FORMAT_
            PV  => 'string',
            PV8 => "ab\ncd\x{20ac}\t",
            PVM => '',
-           RV  => \do { my $v = undef },
+           RV  => \do { my $v = expected_dot },
            UND => undef
          };
 EXPECT
     }
     else {
-        same( $dump= $o->Data(\%hash)->Out, <<'EXPECT', "", $o);
+        same( $dump= $o->Data(\%hash)->Out, template( <<'EXPECT', expected_dot => $expected_dot ), "", $o);
 $HASH1 = {
            AR  => [
                     1,
@@ -357,11 +367,21 @@ $HASH1 = {
            PV  => 'string',
            PV8 => "ab\ncd\x{20ac}\t",
            PVM => '',
-           RV  => \do { my $v = undef },
+           RV  => \do { my $v = expected_dot },
            UND => undef
          };
 EXPECT
     }
+}
+
+sub template {
+    my ( $pattern, %replacements ) = @_;
+
+    for ( keys %replacements ) {
+        $pattern =~ s/$_/$replacements{$_}/g;
+    }
+
+    return $pattern;
 }
 __END__
 

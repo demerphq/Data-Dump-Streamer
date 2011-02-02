@@ -1,3 +1,6 @@
+2.31
+React to Strawberry perl $. strangeness [RT #58528]
+
 2.29
 Add .answer to .gitignore
 Update t/madness for perl-5.6
