@@ -304,7 +304,7 @@ _EOF_FORMAT_
          };
 EXPECT
     }
-    else {
+    elsif ( $] >= 5.008_000 ) {
         same( $dump= $o->Data(\%hash)->Out, <<'EXPECT', "", $o);
 $HASH1 = {
            AR  => [
@@ -312,7 +312,7 @@ $HASH1 = {
                     2
                   ],
            CR  => sub {
-                    BEGIN {${^WARNING_BITS} = "UUUUUUUUUUUU\001"}
+                    BEGIN {${^WARNING_BITS} = "UUUUUUUUUUUU"}
                     use strict 'refs';
                     'code';
                   },
@@ -323,6 +323,31 @@ $HASH1 = {
                   # .
 _EOF_FORMAT_
                   },
+           GLB => *::STDERR,
+           HR  => { key => 'value' },
+           IO  => bless( *{Symbol::gensym()}{IO}, 'IO::Handle' ),
+           IV  => 1,
+           NV  => 3.14159265358979,
+           OBJ => bless( qr/("[^"]+")/, 'Zorp' ),
+           PV  => 'string',
+           PV8 => "ab\ncd\x{20ac}\t",
+           PVM => '',
+           RV  => \do { my $v = undef },
+           UND => undef
+         };
+EXPECT
+    }
+    else {
+        same( $dump= $o->Data(\%hash)->Out, <<'EXPECT', "", $o);
+$HASH1 = {
+           AR  => [
+                    1,
+                    2
+                  ],
+           CR  => sub {
+                    'code';
+                  },
+           FMT => \do { my $v = undef },
            GLB => *::STDERR,
            HR  => { key => 'value' },
            IO  => bless( *{Symbol::gensym()}{IO}, 'IO::Handle' ),

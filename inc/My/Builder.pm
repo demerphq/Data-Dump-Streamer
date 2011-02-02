@@ -78,7 +78,7 @@ sub new {
         print "I will also install DDS as an alias.\n";
         open my $ofh, ">", "./lib/DDS.pm"
             or die "Failed to open ./lib/DDS.pm: $!";
-        print $ofh DDS();
+        print { $ofh } DDS();
         close $ofh;
 
         $self->add_to_cleanup( './lib/DDS.pm' );

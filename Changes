@@ -1,3 +1,9 @@
+2.29
+Add .answer to .gitignore
+Update t/madness for perl-5.6
+Syntax fix print() for perl-5.6
+Correct ${^WARNING_BITS} in t/madness.t for perl-5.8.7 and earlier
+
 2.28
 Strip illegal regexp modifiers [RT #65355]
 Update file permissions
