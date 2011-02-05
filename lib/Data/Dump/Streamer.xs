@@ -107,6 +107,12 @@ my_cxinc(pTHX)
 #    define NV double
 #endif
 
+#if PERL_VERSION < 8
+#    define MY_XS_AMAGIC
+#endif
+#if ((PERL_VERSION == 8) && (PERL_SUBVERSION <= 8))
+#    define MY_XS_AMAGIC
+#endif
 
 /*
    the following three subs are outright stolen from Data::Dumper ( Dumper.xs )
@@ -179,7 +185,6 @@ esc_q(register char *d, register char *s, register STRLEN slen)
     }
     return ret;
 }
-
 
 XS(XS_Data__Dump__Streamer_SvREADONLY);
 XS(XS_Data__Dump__Streamer_SvREADONLY)	/* This is dangerous stuff. */
@@ -767,6 +772,25 @@ CODE:
 }
 OUTPUT:
     RETVAL
+
+#ifdef MY_XS_AMAGIC
+
+void
+SvAMAGIC_off(sv)
+    SV * sv
+PROTOTYPE: $
+CODE:
+    SvAMAGIC_off(sv);
+
+void
+SvAMAGIC_on(sv,klass)
+    SV * sv
+    SV * klass
+PROTOTYPE: $$
+CODE:
+    SvAMAGIC_off(sv);
+
+#endif
 
 
 #ifndef NEW_REGEX_ENGINE
