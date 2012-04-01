@@ -1,6 +1,7 @@
 package Data::Dump::Streamer;
 use strict;
 use warnings;
+use warnings::register;
 
 use B ();
 use B::Deparse ();
@@ -17,8 +18,6 @@ use overload ();
 use Data::Dump::Streamer::_::Printers;
 
 # use overload qw("" printit); # does diabolical stuff.
-use warnings;
-use warnings::register;
 
 use vars qw(
              $VERSION
@@ -35,7 +34,7 @@ $DEBUG=0;
 BEGIN{ $HasPadWalker=eval "use PadWalker 0.99; 1"; }
 
 BEGIN {
-    $VERSION   ='2.32';
+    $VERSION   ='2.33';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
     @EXPORT=qw(Dump DumpLex DumpVars);
@@ -1011,7 +1010,7 @@ sub _build_name {
           unless substr( $name, 0, 1 ) eq $type and $type ne '$';
 
     } else {
-        no warnings;
+        no warnings; # XXX - why is this here? Yves
         Carp::confess "unimplemented _build_name";
     }
     $DEBUG>1 and print "$name )\n";
@@ -2335,7 +2334,7 @@ sub _dump_sv {
             } else {
                 my $quoted;
                 if ($self->{style}{dualvars}) {
-                    no warnings 'numeric';
+                    no warnings 'numeric'; # XXX: is this required?
                     if (_could_be_dualvar($item) && 0+$item ne $item && "$item" != $item ) {
                         $quoted="dualvar( ".join(",$optspace",0+$item,_quote("$item"))."$optspace)";
                     }
@@ -2460,7 +2459,7 @@ my %default_key_sorters= (
 $default_key_sorters{alphabetical}=$default_key_sorters{lexical};
 $default_key_sorters{intelligent}=$default_key_sorters{smart};
 for my $h (\%default_key_sorters) {
-    my $abr=Text::Abbrev::abbrev keys %$h;
+    my $abr=Text::Abbrev::abbrev(keys %$h);
     foreach my $short (keys %$abr) {
         $h->{$short}=$h->{$abr->{$short}};
     }
@@ -3736,7 +3735,7 @@ use B::Deparse;
 our @ISA=qw(B::Deparse);
 my %cache;
 
-our $VERSION = '2.32';
+our $VERSION = '2.33';
 if ( $VERSION ne $Data::Dump::Streamer::VERSION ) {
     die "Incompatible Data::Dump::Streamer::Deparser v$VERSION vs Data::Dump::Streamer v$Data::Dump::Streamer::VERSION";
 }

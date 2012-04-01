@@ -1,3 +1,18 @@
+2.33
+Caught up with various RT reports, and fixed a bunch of them.
+
+[RT #74198] fixed dumps containing read-only objects (obtained via JSON::XS)
+
+[RT #74198], Fixed stringification of code compiled under strict in later
+perls. Thanks to Father Chrysotomos for the patch and nudge.
+
+Also eliminated a false-fail prone test which was actually pretty useless,
+which should close several tickets which I wont bother to list.
+
+This release also is the first from the new git repository at
+https://github.com/demerphq/Data-Dump-Streamer
+
+
 2.32
 Disable overloading in a <=5.8.8 safe way [RT #53700]
 
