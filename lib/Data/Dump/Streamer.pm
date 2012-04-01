@@ -229,10 +229,12 @@ EO_HU
         };
     } else {
         *disable_overloading = sub ($) {
-            bless $_[0], 'Does::Not::Exist';
+            # we use eval because $_[0] might be read-only
+            # its a crappy solution, but whatever, it works
+            eval { bless $_[0], 'Does::Not::Exist' };
         };
         *restore_overloading = sub ($$) {
-            bless $_[0], $_[1];
+            eval { bless $_[0], $_[1] }
         };
     }
     my %fail=map { ( $_ => 1 ) } @EXPORT_FAIL;
