@@ -232,7 +232,6 @@ format STDOUT =
         NV  => 3.14159265358979,
         PV  => "string",
         PV8 => "ab\ncd\x{20ac}\t",
-        PVM => "$!",
         RV  => \$.,
         AR  => [ 1..2 ],
         HR  => { key => "value" },
@@ -275,7 +274,6 @@ _EOF_FORMAT_
            OBJ => bless( qr/("[^"]+")/, 'Zorp' ),
            PV  => 'string',
            PV8 => "ab\ncd\x{20ac}\t",
-           PVM => '',
            RV  => \do { my $v = expected_dot },
            UND => undef
          };
@@ -315,7 +313,6 @@ _EOF_FORMAT_
            OBJ => bless( qr/("[^"]+")/, 'Zorp' ),
            PV  => 'string',
            PV8 => "ab\ncd\x{20ac}\t",
-           PVM => '',
            RV  => \do { my $v = expected_dot },
            UND => undef
          };
@@ -348,7 +345,6 @@ _EOF_FORMAT_
            OBJ => bless( qr/("[^"]+")/, 'Zorp' ),
            PV  => 'string',
            PV8 => "ab\ncd\x{20ac}\t",
-           PVM => '',
            RV  => \do { my $v = expected_dot },
            UND => undef
          };
@@ -373,7 +369,6 @@ $HASH1 = {
            OBJ => bless( qr/("[^"]+")/, 'Zorp' ),
            PV  => 'string',
            PV8 => "ab\ncd\x{20ac}\t",
-           PVM => '',
            RV  => \do { my $v = expected_dot },
            UND => undef
          };
