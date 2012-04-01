@@ -35,6 +35,7 @@ my $build = My::Builder->new(
         'utf8'               => 0,
         'vars'               => 0,
         'warnings'           => 0,
+        'JSON::XS'           => 0,
         $] >= 5.012
             ? ( 're' => 0 )
             : (),
