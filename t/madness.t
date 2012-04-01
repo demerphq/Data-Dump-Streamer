@@ -249,7 +249,7 @@ format STDOUT =
     #   IO handles are now blessed into IO::File, I guess?
     #
     if ( $] >= 5.012_000 ) {
-        same( $dump= $o->Data(\%hash)->Out, template( <<'EXPECT', expected_dot => $expected_dot ), "", $o);
+        my $expect = <<'EXPECT';
 $HASH1 = {
            AR  => [
                     1,
@@ -280,6 +280,13 @@ _EOF_FORMAT_
            UND => undef
          };
 EXPECT
+        require B::Deparse;
+        if (new B::Deparse -> coderef2text (
+              sub { no strict; 1; use strict; 1; }
+           ) !~ 'refs') {
+            $expect =~ s/strict 'refs'/strict/;
+        }
+        same( $dump= $o->Data(\%hash)->Out, template( $expect, expected_dot => $expected_dot ), "", $o);
     }
     elsif ( $] >= 5.008_008 ) {
         same( $dump= $o->Data(\%hash)->Out, template( <<'EXPECT', expected_dot => $expected_dot ), "", $o);
