@@ -133,18 +133,19 @@ sub _same {
 
 sub _dumper {
     my ($todump)=@_;
-    my ($dump,$error);
+    my $dump;
+    my $error= "";
     foreach my $use_perl (1) {
         my $warned="";
         local $SIG{__WARN__}=sub { my $err=join ('',@_); $warned.=$err unless $err=~/^Subroutine|Encountered/};
         $dump=eval { scalar Data::Dumper->new( $todump )->Purity(1)->Sortkeys(1)->Quotekeys(1)->Useperl($use_perl)->Dump() };
-        unless ($@) {
+        if ( !$@ ) {
             normalize($dump);
-            return ($dump,$error.$warned);
-        }else {
+            return ($dump, $error . $warned);
+        } else {
             unless ($version) {
                 $version="\tSomething is wrong with Data::Dumper v" . Data::Dumper->VERSION . "\n";
-                $error=$version;
+                $error= $version;
             }
             my $msg=$@.$warned;
             unless ($errors{$msg}) {
