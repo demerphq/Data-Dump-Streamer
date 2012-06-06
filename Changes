@@ -1,3 +1,7 @@
+2.34
+Administrative release to eliminate build dependency on module
+used only for testing.
+
 2.33
 Caught up with various RT reports, and fixed a bunch of them.
 

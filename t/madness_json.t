@@ -1,11 +1,16 @@
-use Test::More tests => 7;
-
-#$Id: madness.t 26 2006-04-16 15:18:52Z demerphq $#
-
-BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump) ); }
+use Test::More;
 use strict;
 use warnings;
 use Data::Dumper;
+BEGIN {
+    if (eval"require JSON::XS; 1") {
+        plan tests => 7;
+    } else {
+        plan skip_all => "No JSON::XS";
+        exit; # not sure if this is needed
+    }
+};
+BEGIN { use_ok( 'Data::Dump::Streamer', qw(:undump) ); }
 # imports same()
 (my $helper=$0)=~s/\w+\.\w+$/test_helper.pl/;
 require $helper;
@@ -225,6 +230,7 @@ format STDOUT =
     else {
         $expected_dot = 'undef';
     }
+    my $jstrue= JSON::XS::decode_json("true");
     my %hash = (
         UND => undef,
         IV  => 1,
@@ -239,6 +245,7 @@ format STDOUT =
         IO  => *{$::{STDERR}}{IO},
         FMT => \*{$::{STDOUT}}{FORMAT},
         OBJ => bless(qr/("[^"]+")/,"Zorp"),
+        JSB => $jstrue,
         );
 
     # Dumping differences per perl version:
@@ -269,6 +276,7 @@ _EOF_FORMAT_
            HR  => { key => 'value' },
            IO  => bless( *{Symbol::gensym()}{IO}, 'IO::File' ),
            IV  => 1,
+           JSB => \1,
            NV  => 3.14159265358979,
            OBJ => bless( qr/("[^"]+")/, 'Zorp' ),
            PV  => 'string',
@@ -276,6 +284,7 @@ _EOF_FORMAT_
            RV  => \do { my $v = expected_dot },
            UND => undef
          };
+bless( $HASH1->{JSB}, 'JSON::XS::Boolean' );
 EXPECT
         require B::Deparse;
         if (new B::Deparse -> coderef2text (
@@ -308,6 +317,7 @@ _EOF_FORMAT_
            HR  => { key => 'value' },
            IO  => bless( *{Symbol::gensym()}{IO}, 'IO::Handle' ),
            IV  => 1,
+           JSB => \1,
            NV  => 3.14159265358979,
            OBJ => bless( qr/("[^"]+")/, 'Zorp' ),
            PV  => 'string',
@@ -315,6 +325,7 @@ _EOF_FORMAT_
            RV  => \do { my $v = expected_dot },
            UND => undef
          };
+bless( $HASH1->{JSB}, 'JSON::XS::Boolean' );
 EXPECT
     }
     elsif ( $] >= 5.008_000 ) {
@@ -340,6 +351,7 @@ _EOF_FORMAT_
            HR  => { key => 'value' },
            IO  => bless( *{Symbol::gensym()}{IO}, 'IO::Handle' ),
            IV  => 1,
+           JSB => \1,
            NV  => 3.14159265358979,
            OBJ => bless( qr/("[^"]+")/, 'Zorp' ),
            PV  => 'string',
@@ -347,6 +359,7 @@ _EOF_FORMAT_
            RV  => \do { my $v = expected_dot },
            UND => undef
          };
+bless( $HASH1->{JSB}, 'JSON::XS::Boolean' );
 EXPECT
     }
     else {
@@ -364,6 +377,7 @@ $HASH1 = {
            HR  => { key => 'value' },
            IO  => bless( *{Symbol::gensym()}{IO}, 'IO::Handle' ),
            IV  => 1,
+           JSB => \1,
            NV  => 3.14159265358979,
            OBJ => bless( qr/("[^"]+")/, 'Zorp' ),
            PV  => 'string',
@@ -371,6 +385,7 @@ $HASH1 = {
            RV  => \do { my $v = expected_dot },
            UND => undef
          };
+bless( $HASH1->{JSB}, 'JSON::XS::Boolean' );
 EXPECT
     }
 }

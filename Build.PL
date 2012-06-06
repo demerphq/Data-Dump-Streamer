@@ -35,7 +35,6 @@ my $build = My::Builder->new(
         'utf8'               => 0,
         'vars'               => 0,
         'warnings'           => 0,
-        'JSON::XS'           => 0,
         $] >= 5.012
             ? ( 're' => 0 )
             : (),
@@ -76,6 +75,9 @@ my $build = My::Builder->new(
         # CPAN
         'Algorithm::Diff' => 0,
         'PadWalker'       => '0.99',
+
+        # optional for testing
+        'JSON::XS'           => 0,
     },
 );
 $build->create_build_script();

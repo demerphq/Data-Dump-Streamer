@@ -1,4 +1,5 @@
 .patch
+.gitignore
 Build.PL
 Changes
 inc/My/Builder.pm
@@ -22,6 +23,7 @@ t/impure_madness.t
 t/lexicals.t
 t/locked.t
 t/madness.t
+t/madness_json.t
 t/madness_w.t
 t/names.t
 t/overload.t
