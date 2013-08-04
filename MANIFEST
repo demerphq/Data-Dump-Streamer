@@ -38,3 +38,4 @@ t/tree.t
 t/usage.t
 t/xs_subs.t
 typemap
+META.json
