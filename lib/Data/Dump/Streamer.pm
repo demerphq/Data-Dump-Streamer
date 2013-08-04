@@ -258,7 +258,7 @@ sub import {
 # NOTE
 # ----
 # This module uses the term 'sv' in a way that is misleading.
-# It doesnt always mean the same as it would in the core.
+# It doesn't always mean the same as it would in the core.
 #
 # 1. data is breadth first traversed first, in the pretty much
 # self contained Data() routine which farms out a bit to
@@ -266,7 +266,7 @@ sub import {
 # later use, such as their depth, refcount, "name", etc. But
 # ONLY for references and scalars whose refcount is over 2.
 # Most real SV's will have a refcount of 2 when we look at them
-# (from the perl side) so we actually dont know about them (trust me)
+# (from the perl side) so we actually don't know about them (trust me)
 # They _cant_ be referenced twice, and they can't be aliased so we can
 # can just ignore them until the second pass.
 # 2.Once this has happened Out() is called which starts off a
@@ -279,16 +279,16 @@ sub import {
 #(which is scary nasty horrible code) and then pass on to _dump_type where
 # type is one of 'code', 'qr', 'array' etc. Each of these which have children
 # then call back into _dump_sv as required.
-# 5. Because of the way perl works, we can't emit anthing more than a DAG in a
-# single statment, so for more complex structures we need to add in the broken
+# 5. Because of the way perl works, we can't emit anything more than a DAG in a
+# single statement, so for more complex structures we need to add in the broken
 # links. I call these "fix statements", and they encompass copying reference
-# values, creating aliases, or even dumping globs.  When a fix statment is needed
+# values, creating aliases, or even dumping globs.  When a fix statement is needed
 # any of the _dump_foo methods will call _add_fix and add to the list of fixes.
 # after every root level _dump_sv call from Out() any fix statements possible to be
 # resolved will be emitted and removed from the fix list. This happens in
 # _dump_apply_fix, which is another piece of horrible code.
 #
-# Anyway, its terribly ugly, but for anything I can think to throw at it it works.
+# Anyway, its terribly ugly, but for anything I can think to throw at i works.
 # demerphq
 
 =encoding utf8
@@ -362,11 +362,11 @@ obeying the depth relationships of the first pass.
 As of version 1.11 DDS has had the ability to dump closures properly. This
 means that the lexicals that are bound to the closure are dumped along
 with the subroutine that uses them. This makes it much easier to debug
-code that uses closures and to a certain extent provides a persistancy
+code that uses closures and to a certain extent provides a persistency
 framework for closure based code. The way this works is that DDS figures
 out what all the lexicals are that are bound to CODE refs it is dumping
 and then pretends that it had originally been called with all of them as
-its arguements, (along with the original arguments as well of course.)
+its arguments, (along with the original arguments as well of course.)
 
 One consequence of the way the dumping process works is that all of the
 recreated subroutines will be in the same scope. This of course can lead
@@ -398,11 +398,11 @@ is bad practice anyway, so this should probably be viewed as a "feature".
 Generally if the closures being dumped avoid accessing lexicals and
 globals with the same name from out of scope and that all of the CODE
 being dumped avoids vars with the C<EclipseName> in their names the dumps
-should be valid and should eval back into existance properly.
+should be valid and should eval back into existence properly.
 
 Note that the behaviour of dumping closures is subject to change in future
 versions as its possible that I will put some additional effort into more
-sophisiticated ways of avoiding name collisions in the dump.
+sophisticated ways of avoiding name collisions in the dump.
 
 =head1 USAGE
 
@@ -495,7 +495,7 @@ Use C<do{}> to wrap multistatement code.
 
 This values is used to allow extra control over how the object will be
 recreated when dumped. It is used for converting the C<$proxy> representation
-into the real thing. It is only relevent when C<$proxy> is a reference.
+into the real thing. It is only relevant when C<$proxy> is a reference.
 
 =over 8
 
@@ -507,7 +507,7 @@ Indicates no thaw action is to be included for this object.
 
 A string matching C<< /^(->)?((?:\w*::)\w+)(\(\))?$/ >> in which case it
 is taken as a sub name when the string ends in () and a method name
-when the string doesnt. If the C<< -> >> is present then the sub or method
+when the string doesn't. If the C<< -> >> is present then the sub or method
 is called inline. If it is not then the sub or method is called
 after the main dump.
 
@@ -523,7 +523,7 @@ in a for loop that aliases C<$_> to the variable in question.
 
 This is the similar to C<$thaw> but is called in process instead
 of being emitted as part of the dump. Any return is ignored.
-It is only relevent when C<$proxy> is a reference.
+It is only relevant when C<$proxy> is a reference.
 
 =over 8
 
@@ -546,7 +546,7 @@ The method will be called after serialization is complete
 
 An example DDS_freeze method is one I had to put together for an object
 which contained a key whose value was a ref to an array tied to the value
-of another key. Dumping this got crazy, so I wanted to surpress dumping
+of another key. Dumping this got crazy, so I wanted to suppress dumping
 the tied array. I did it this way:
 
     sub DDS_freeze {
@@ -619,9 +619,9 @@ will override it.
 
 By default Data::Dump::Streamer will "run length encode" array values.
 This means that when an array value is simple (ie, its not referenced and
-does contain a reference) and is repeated mutliple times the output will
+does contain a reference) and is repeated multiple times the output will
 be single a list multiplier statement, and not each item output
-seperately. Thus: L<C<Dump([0,0,0,0])>|/Dump> will be output somthing like
+separately. Thus: L<C<Dump([0,0,0,0])>|/Dump> will be output something like
 
    $ARRAY1 = [ (0) x 4 ];
 
@@ -635,7 +635,7 @@ default it is enabled and set to TRUE.
 =head2 Installing I<DDS> as a package alias
 
 Its possible to have an alias to Data::Dump::Streamer created and
-installed for easier useage in one liners and short scripts.
+installed for easier usage in one liners and short scripts.
 Data::Dump::Streamer is a bit long to type sometimes. However because this
 technically means polluting the root level namespace, and having it listed
 on CPAN, I have elected to have the installer not install it by default.
@@ -723,11 +723,11 @@ sub new {
     my $class = shift;
     my $self = bless {
         style => {
-            hashsep      => '=>',    # use this to seperate key vals
+            hashsep      => '=>',    # use this to separate key vals
             arysep       => ',',
             pairsep      => ',',
             optspace     => ' ',
-            bless        => 'bless()', # use this to bless ojects, needs fixing
+            bless        => 'bless()', # use this to bless objects, needs fixing
 
             compress     => 0, # if nonzero use compressor to compress strings
                                # longer than this value.
@@ -746,7 +746,7 @@ sub new {
 
             rle          => 1,         # run length encode arrays
             ignore       => {},        # ignore classes
-            indentcols   => 2,         # indent this numbe of cols
+            indentcols   => 2,         # indent this number of cols
             ro           => 1,         # track readonly vars
             dualvars     => 1,         # dump dualvars
             eclipsename  => "%s_eclipse_%d",
@@ -834,7 +834,7 @@ BEGIN {
                 s/([\0-\037\177])   / sprintf '\\%03o',  ord($1)/xeg;
 
                 if (length $_ != do { use bytes; length $_ }) {
-                    use utf8; #perl 5.6.1 needs this, 5.9.2 doesnt. sigh
+                    use utf8; #perl 5.6.1 needs this, 5.9.2 doesn't. sigh
                     s/([\200-\377]) / sprintf '\\%03o',  ord($1)/xeg;
                     s/([^\040-\176])/ sprintf '\\x{%x}', ord($1)/xeg;
                 } else {
@@ -1082,13 +1082,13 @@ Smart non method based constructor.
 This routine behaves very differently depending on the context it is
 called in and whether arguments are provided.
 
-If called with no arguments it is exactly equivelent to calling
+If called with no arguments it is exactly equivalent to calling
 
   Data::Dump::Streamer->new()
 
 which means it returns an object reference.
 
-If called with arguments and in scalar context it is equivelent to calling
+If called with arguments and in scalar context it is equivalent to calling
 
   Data::Dump::Streamer->new()->Data(@vals)
 
@@ -1781,7 +1781,7 @@ sub _dump_apply_fix { #handle fix statements and GLOB's here.
     my ($self,$isfinal)=@_;
     # go through the fix statements and out any that are
     # now fully dumped.
-    # curently the following types are grokked:
+    # currently the following types are grokked:
     # 'var','glob','method call','tlock','ref','sv','#'
 
     my @globs;
@@ -2202,7 +2202,7 @@ sub _dump_sv {
                     #see the 'Many refs' tests in t\dump.t for
                     #why this is here. basically we need to
                     #ensure the ref is modifiable. If its two $'s
-                    #then its modifable anyway, more and it wont be.
+                    #then its modifiable anyway, more and it wont be.
                     # $ref=\\$x; $ref=RW $$ref=RO $$$ref=$x=RW
                     unless ($self->{style}{purity}) {
                         $str="\\$self->{svn}[$idx]";
@@ -3047,7 +3047,7 @@ an array, hash or code ref. Otherwise the star is ignored. Other sigils
 may be prefixed but they will be silently converted to *'s.
 
 If no names are provided then names are generated automatically based on
-the type of object being dumped, with abreviations applied to compound
+the type of object being dumped, with abbreviations applied to compound
 class names.
 
 If called with arguments then returns the object itself, otherwise in list
@@ -3093,10 +3093,10 @@ sub Purity {}
 This option can be used to set the level of purity in the output. It
 defaults to TRUE, which results in the module doing its best to ensure
 that the resulting dump when eval()ed is precisely the same as the input.
-However, at times such as debugging this can be tedius, resulting in
+However, at times such as debugging this can be tedious, resulting in
 extremely long dumps with many "fix" statements involved.  By setting
 Purity to FALSE the resulting output won't necessarily be legal Perl, but
-it will be more legible. In this mode the output is boardly similar to
+it will be more legible. In this mode the output is broadly similar to
 that of the default setting of Data::Dumper (Purity(0)). When set to TRUE
 the behaviour is likewise similar to Data::Dumper in Purity(1) but more
 accurate.
@@ -3175,7 +3175,7 @@ fashion. If the value is 2 then hash key/value pairs and array values each
 on their own line. If the value is 1 then a "smart" indenting mode is
 activated where multiple key/value or values may be printed to the same
 line. The heuristics for this mode are still experimental so it may
-occassional not indent very nicely.
+occasional not indent very nicely.
 
 Default is Indent(2)
 
@@ -3251,7 +3251,7 @@ See L<"Controlling Hash Traversal and Display Order"> for more details.
 
 This is a wrapper for KeyOrder. It allows only the generic hash
 sort order to be specified a little more elegantly than via KeyOrder().
-It is syntactically equivelent to
+It is syntactically equivalent to
 
   $self->KeyOrder( "", @_ );
 
@@ -3560,7 +3560,7 @@ interface:
   my $code=$compressor->('string'); # string argument
 
 The sub will be called with no arguments at the beginning of the
-dump to allow any require statments or similar to be added. During
+dump to allow any require statements or similar to be added. During
 the dump the sub will be called with a single argument when
 compression is required. The code returned in this case is expected
 to be an EXPR that will evaluate back to the original string.
@@ -3808,12 +3808,12 @@ and as such the value will have to be provided later in what the author
 calls 'fix' statements. The third entry C<< 'A: $ARRAY1->[1]' >> indicates
 that is element of the array is in fact the exact same scalar as exists in
 C<< $ARRAY1->[1] >>, or is in other words, an alias to that variable.
-Again, this cannot be expressed in a single statment and so generates
+Again, this cannot be expressed in a single statement and so generates
 another, different, fix statement. The fifth entry C<< 'V: $ARRAY1->[3]' >>
 indicates that this slots holds a value (actually a reference value)
 that is identical to one elsewhere, but is currently undefined.  In this
 case it is because the value it needs is the reference returned by the
-anonymous array constructer in the fourth element (C<< $ARRAY1->[3] >>).
+anonymous array constructor in the fourth element (C<< $ARRAY1->[3] >>).
 Again this results in yet another different fix statement.  If Verbose()
 is off then only a 'R' 'A' or 'V' tag is emitted as a marker of some form
 is necessary.
@@ -3827,7 +3827,7 @@ In a later version I'll try to expand this section with more examples.
 =head2 A Note About Speed
 
 Data::Dumper is much faster than this module for many things. However IMO
-it is less readable, and definately less accurate. YMMV.
+it is less readable, and definitely less accurate. YMMV.
 
 =head1 EXPORT
 
@@ -3914,7 +3914,7 @@ Please report them with as much of the error output as possible.
 
 Be aware that to a certain extent this module is subject to whimsies of
 your local perl. The same code may not produce the same dump on two
-different installs and versions. Luckily these dont seem to pop up often.
+different installs and versions. Luckily these don't seem to pop up often.
 
 =head1 AUTHOR AND COPYRIGHT
 
