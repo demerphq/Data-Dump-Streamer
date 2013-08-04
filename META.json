@@ -73,11 +73,11 @@
    "provides" : {
       "Data::Dump::Streamer" : {
          "file" : "lib/Data/Dump/Streamer.pm",
-         "version" : "2.35"
+         "version" : "2.36"
       },
       "Data::Dump::Streamer::Deparser" : {
          "file" : "lib/Data/Dump/Streamer.pm",
-         "version" : "2.35"
+         "version" : "2.36"
       }
    },
    "release_status" : "stable",
@@ -89,5 +89,5 @@
          "url" : "https://github.com/demerphq/Data-Dump-Streamer"
       }
    },
-   "version" : "2.35"
+   "version" : "2.36"
 }
