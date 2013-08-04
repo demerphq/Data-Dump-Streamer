@@ -34,7 +34,7 @@ $DEBUG=0;
 BEGIN{ $HasPadWalker=eval "use PadWalker 0.99; 1"; }
 
 BEGIN {
-    $VERSION   ='2.34';
+    $VERSION   ='2.35';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
     @EXPORT=qw(Dump DumpLex DumpVars);
@@ -127,7 +127,7 @@ BEGIN {
         # As I write this, 5.13.10 doesn't exist so I'm guessing that
         # we can begin using the ordinary core function again.
         eval q[
-            use re qw(regexp_pattern);
+            use re qw(regexp_pattern is_regexp);
             *regex= *regexp_pattern;
         ] or die $@;
     }
@@ -135,7 +135,7 @@ BEGIN {
         # Perl-5.13.6 through perl-5.13.9 began returning modifier
         # flags that weren't yet legal at the time.
         eval q[
-            use re qw(regexp_pattern);
+            use re qw(regexp_pattern is_regexp);
             sub regex {
                 if (wantarray) {
                     my ($pat,$mod) = regexp_pattern($_[0]);
@@ -153,10 +153,13 @@ BEGIN {
     }
     elsif ($]>=5.009004) {
         eval q[
-            use re qw(regexp_pattern);
+            use re qw(regexp_pattern is_regexp);
             *regex= *regexp_pattern;
             1;
         ] or die $@;
+    }
+    else {
+      eval q[sub is_regexp($) { defined regex($_[0]) }];
     }
     if ($]<=5.008) {
         *hidden_keys=sub(\%)  { return () };
@@ -2827,7 +2830,7 @@ sub _dump_rv {
         $idx=$self->{ref}{$addr};
         $type=reftype($item);
         $class=blessed($item);
-        $class=undef if $class and $class eq 'Regexp' and regex $item;
+        $class=undef if $class and $class eq 'Regexp' and is_regexp $item;
 
         $DEBUG and
         printf "_dump_rv %d %s %#x\n",$depth,$name,$addr;
@@ -3735,7 +3738,7 @@ use B::Deparse;
 our @ISA=qw(B::Deparse);
 my %cache;
 
-our $VERSION = '2.34';
+our $VERSION = '2.35';
 if ( $VERSION ne $Data::Dump::Streamer::VERSION ) {
     die "Incompatible Data::Dump::Streamer::Deparser v$VERSION vs Data::Dump::Streamer v$Data::Dump::Streamer::VERSION";
 }
