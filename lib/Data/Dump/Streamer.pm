@@ -3698,9 +3698,9 @@ sub _get_lexicals {
     }
 
     my $svo=B::svref_2object($cv);
-    my @pl_array = $svo->PADLIST->ARRAY;
+    my @pl_array = eval { $svo->PADLIST->ARRAY };
 
-    my @name_obj = $pl_array[0]->ARRAY;
+    my @name_obj = eval { $pl_array[0]->ARRAY };
 
     my %named;
     for my $i ( 0..$#name_obj ) {
