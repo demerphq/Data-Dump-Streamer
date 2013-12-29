@@ -388,6 +388,10 @@ $HASH1 = {
 bless( $HASH1->{JSB}, 'JSON::XS::Boolean' );
 EXPECT
     }
+    # In JSON::XS < 3, the boolean class is JSON::XS::Boolean
+    # In JSON::XS >= 3, the boolean class is JSON::PP::Boolean
+    my $json_boolean_class = ref JSON::XS::decode_json("true");
+    $expect =~ s{JSON::XS::Boolean}{$json_boolean_class}g;
     same( $dump= $o->Data(\%hash)->Out, template( $expect, expected_dot => $expected_dot ), "", $o);
 }
 
