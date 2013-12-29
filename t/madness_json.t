@@ -248,13 +248,13 @@ format STDOUT =
         JSB => $jstrue,
         );
 
+    my $expect;
     # Dumping differences per perl version:
     # 5.12.0+:
     #
     #   IO handles are now blessed into IO::File, I guess?
     #
     if ( $] >= 5.012_000 ) {
-
         # This fixes https://github.com/demerphq/Data-Dump-Streamer/issues/8
       my $json_bool_class = ref( $jstrue );
         my $expect = q|$HASH1 = {
@@ -294,10 +294,9 @@ bless( $HASH1->{JSB}, '|.$json_bool_class.q|' );
            ) !~ 'refs') {
             $expect =~ s/strict 'refs'/strict/;
         }
-        same( $dump= $o->Data(\%hash)->Out, template( $expect, expected_dot => $expected_dot ), "", $o);
     }
     elsif ( $] >= 5.008_008 ) {
-        same( $dump= $o->Data(\%hash)->Out, template( <<'EXPECT', expected_dot => $expected_dot ), "", $o);
+        $expect = <<'EXPECT';
 $HASH1 = {
            AR  => [
                     1,
@@ -331,7 +330,7 @@ bless( $HASH1->{JSB}, 'JSON::XS::Boolean' );
 EXPECT
     }
     elsif ( $] >= 5.008_000 ) {
-        same( $dump= $o->Data(\%hash)->Out, template( <<'EXPECT', expected_dot => $expected_dot ), "", $o);
+        $expect = <<'EXPECT';
 $HASH1 = {
            AR  => [
                     1,
@@ -365,7 +364,7 @@ bless( $HASH1->{JSB}, 'JSON::XS::Boolean' );
 EXPECT
     }
     else {
-        same( $dump= $o->Data(\%hash)->Out, template( <<'EXPECT', expected_dot => $expected_dot ), "", $o);
+        $expect = <<'EXPECT';
 $HASH1 = {
            AR  => [
                     1,
@@ -390,6 +389,7 @@ $HASH1 = {
 bless( $HASH1->{JSB}, 'JSON::XS::Boolean' );
 EXPECT
     }
+    same( $dump= $o->Data(\%hash)->Out, template( $expect, expected_dot => $expected_dot ), "", $o);
 }
 
 sub template {
