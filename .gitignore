@@ -2,6 +2,7 @@
 .answer
 Build
 MYMETA.yml
+MYMETA.json
 _build/
 build/
 blib/
