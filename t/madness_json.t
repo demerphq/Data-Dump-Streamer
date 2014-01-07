@@ -254,8 +254,10 @@ format STDOUT =
     #   IO handles are now blessed into IO::File, I guess?
     #
     if ( $] >= 5.012_000 ) {
-        my $expect = <<'EXPECT';
-$HASH1 = {
+
+        # This fixes https://github.com/demerphq/Data-Dump-Streamer/issues/8
+      my $json_bool_class = ref( $jstrue );
+        my $expect = q|$HASH1 = {
            AR  => [
                     1,
                     2
@@ -284,8 +286,8 @@ _EOF_FORMAT_
            RV  => \do { my $v = expected_dot },
            UND => undef
          };
-bless( $HASH1->{JSB}, 'JSON::XS::Boolean' );
-EXPECT
+bless( $HASH1->{JSB}, '|.$json_bool_class.q|' );
+|;
         require B::Deparse;
         if (new B::Deparse -> coderef2text (
               sub { no strict; 1; use strict; 1; }
