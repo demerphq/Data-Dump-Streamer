@@ -1,0 +1,55 @@
+language: perl
+before_install:
+ - '[ "$WITH_JSON_XS"   = "2" ] && cpanm --quiet --notest "JSON::XS~<3.00"  || true'
+ - '[ "$WITH_JSON_XS"   = "3" ] && cpanm --quiet --notest "JSON::XS~>=3.00"  || true'
+ - '[ "$WITH_PADWALKER" = "yes" ] && cpanm --quiet --notest PadWalker || true'
+matrix:
+ include:
+  - perl: "5.19"
+    env: WITH_JSON_XS=no  WITH_PADWALKER=no
+  - perl: "5.19"
+    env: WITH_JSON_XS=2   WITH_PADWALKER=yes
+  - perl: "5.19"
+    env: WITH_JSON_XS=3   WITH_PADWALKER=yes
+
+  - perl: "5.18"
+    env: WITH_JSON_XS=no  WITH_PADWALKER=no
+  - perl: "5.18"
+    env: WITH_JSON_XS=2   WITH_PADWALKER=yes
+  - perl: "5.18"
+    env: WITH_JSON_XS=3   WITH_PADWALKER=yes
+
+  - perl: "5.16"
+    env: WITH_JSON_XS=no  WITH_PADWALKER=no
+  - perl: "5.16"
+    env: WITH_JSON_XS=2   WITH_PADWALKER=yes
+  - perl: "5.16"
+    env: WITH_JSON_XS=3   WITH_PADWALKER=yes
+
+  - perl: "5.14"
+    env: WITH_JSON_XS=no  WITH_PADWALKER=no
+  - perl: "5.14"
+    env: WITH_JSON_XS=2   WITH_PADWALKER=yes
+  - perl: "5.14"
+    env: WITH_JSON_XS=3   WITH_PADWALKER=yes
+
+  - perl: "5.12"
+    env: WITH_JSON_XS=no  WITH_PADWALKER=no
+  - perl: "5.12"
+    env: WITH_JSON_XS=2   WITH_PADWALKER=yes
+  - perl: "5.12"
+    env: WITH_JSON_XS=3   WITH_PADWALKER=yes
+
+  - perl: "5.10"
+    env: WITH_JSON_XS=no  WITH_PADWALKER=no
+  - perl: "5.10"
+    env: WITH_JSON_XS=2   WITH_PADWALKER=yes
+  - perl: "5.10"
+    env: WITH_JSON_XS=3   WITH_PADWALKER=yes
+
+  - perl: "5.8"
+    env: WITH_JSON_XS=no  WITH_PADWALKER=no
+  - perl: "5.8"
+    env: WITH_JSON_XS=2   WITH_PADWALKER=yes
+  - perl: "5.8"
+    env: WITH_JSON_XS=3   WITH_PADWALKER=yes
