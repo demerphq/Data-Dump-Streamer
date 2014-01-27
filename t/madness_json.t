@@ -249,6 +249,7 @@ format STDOUT =
         );
 
     my $expect;
+    my $json_bool_class = ref( $jstrue );
     # Dumping differences per perl version:
     # 5.12.0+:
     #
@@ -256,8 +257,8 @@ format STDOUT =
     #
     if ( $] >= 5.012_000 ) {
         # This fixes https://github.com/demerphq/Data-Dump-Streamer/issues/8
-      my $json_bool_class = ref( $jstrue );
-        my $expect = q|$HASH1 = {
+        $expect = <<'EXPECT';
+$HASH1 = {
            AR  => [
                     1,
                     2
@@ -286,8 +287,8 @@ _EOF_FORMAT_
            RV  => \do { my $v = expected_dot },
            UND => undef
          };
-bless( $HASH1->{JSB}, '|.$json_bool_class.q|' );
-|;
+bless( $HASH1->{JSB}, 'JSON::XS::Boolean' );
+EXPECT
         require B::Deparse;
         if (new B::Deparse -> coderef2text (
               sub { no strict; 1; use strict; 1; }
