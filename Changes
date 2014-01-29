@@ -1,3 +1,15 @@
+2.37
+
+Various changes. See github log for changes.
+
+NOTE, I have little time to maintain this package. If a secondary maintainer
+wants to step up I would be happy to grant the appropriate permissions so that
+new releases do not take so long.
+
+2.36
+
+Er... I forgot to update the changes file for this release.
+
 2.35
 Apply patches by Ilmari and D. Steinbrunner.
 

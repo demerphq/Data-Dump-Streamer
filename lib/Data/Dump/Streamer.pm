@@ -34,7 +34,7 @@ $DEBUG=0;
 BEGIN{ $HasPadWalker=eval "use PadWalker 0.99; 1"; }
 
 BEGIN {
-    $VERSION   ='2.36';
+    $VERSION   ='2.37';
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
     @EXPORT=qw(Dump DumpLex DumpVars);
@@ -3738,7 +3738,7 @@ use B::Deparse;
 our @ISA=qw(B::Deparse);
 my %cache;
 
-our $VERSION = '2.36';
+our $VERSION = '2.37';
 if ( $VERSION ne $Data::Dump::Streamer::VERSION ) {
     die "Incompatible Data::Dump::Streamer::Deparser v$VERSION vs Data::Dump::Streamer v$Data::Dump::Streamer::VERSION";
 }
