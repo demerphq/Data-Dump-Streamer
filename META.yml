@@ -24,7 +24,7 @@ configure_requires:
   Module::Build: 0
   perl: 5.006
 dynamic_config: 1
-generated_by: 'Module::Build version 0.4005, CPAN::Meta::Converter version 2.120921'
+generated_by: 'Module::Build version 0.38, CPAN::Meta::Converter version 2.110440'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -33,10 +33,10 @@ name: Data-Dump-Streamer
 provides:
   Data::Dump::Streamer:
     file: lib/Data/Dump/Streamer.pm
-    version: 2.36
+    version: 2.37
   Data::Dump::Streamer::Deparser:
     file: lib/Data/Dump/Streamer.pm
-    version: 2.36
+    version: 2.37
 recommends:
   Algorithm::Diff: 0
   Compress::Zlib: 0
@@ -64,4 +64,4 @@ requires:
 resources:
   license: http://dev.perl.org/licenses/
   repository: https://github.com/demerphq/Data-Dump-Streamer
-version: 2.36
+version: 2.37
