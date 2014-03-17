@@ -2120,15 +2120,6 @@ sub Out {
 }
 
 
-sub print_token {
-    my ($self, $str)=@_;
-    $self->{fh}->print($str);
-}
-sub print_quoted {
-    my ( $self, $str )=@_;
-    $self->{fh}->print($str);
-}
-
 # sqz(str,begin,end)
 sub sqz {
     require Compress::Zlib;
