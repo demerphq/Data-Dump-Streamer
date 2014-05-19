@@ -99,7 +99,7 @@ $ThisIsATest1 = bless( {
                              'bar'
                            ],
                   E     => \\1,
-                  F     => \do { my $v = \do { my $v = undef } },
+                  F     => \\undef,
                   G     => $ARRAY2->[0],
                   Q     => [ 'icky' ]
                 }, 'ThisIsATest' );

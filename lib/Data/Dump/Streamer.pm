@@ -21,6 +21,7 @@ use Data::Dump::Streamer::_::Printers;
 
 use vars qw(
              $VERSION
+             $XS_VERSION
              $AUTOLOAD
              @ISA
              @EXPORT @EXPORT_OK @EXPORT_FAIL %EXPORT_TAGS
@@ -34,7 +35,8 @@ $DEBUG=0;
 BEGIN{ $HasPadWalker=eval "use PadWalker 0.99; 1"; }
 
 BEGIN {
-    $VERSION   ='2.37';
+    $VERSION   ='2.37_01';
+    $XS_VERSION = $VERSION;
     $VERSION = eval $VERSION; # used for beta stuff.
     @ISA       = qw(Exporter DynaLoader);
     @EXPORT=qw(Dump DumpLex DumpVars);
@@ -122,7 +124,7 @@ BEGIN {
     sub alias_to { return shift }
 
     #warn $VERSION;
-    Data::Dump::Streamer->bootstrap();
+    Data::Dump::Streamer->bootstrap($XS_VERSION);
     if ($]>=5.013010) {
         # As I write this, 5.13.10 doesn't exist so I'm guessing that
         # we can begin using the ordinary core function again.
@@ -904,7 +906,7 @@ sub _make_name {
     unless ($uname) {
         my $name = blessed($_[1])
                   || reftype($_[1])
-                  || (readonly($_[1])  ? "RO" : "VAR");
+                  || ((readonly($_[1]) && (\$_[1] != \undef)) ? "RO" : "VAR");
         unless ($self->{style}{verbose}) {
             my $n=1;
             (my $abr=$name)=~s/(\w)\w*::/$1/g;
@@ -2301,9 +2303,17 @@ sub _dump_sv {
         if $is_ref;
 
     my $glob=globname $item;
-    my $add_do=$self->{style}{purity} && !$ro && $is_ref
-               && {''=>1,SCALAR=>1,REF=>0}->{reftype($_[1])}
-               && !blessed($_[1]) && !$glob;
+    my $add_do=$self->{style}{purity}
+               && !$ro
+               && $is_ref
+               && !blessed($_[1])
+               && !$glob
+               && do {
+                    my $rtype= reftype($_[1]);
+                    $rtype eq "" or
+                    ($rtype eq "SCALAR" and ( $] < 5.020 or !readonly(${ $_[1] }) ) )
+                  }
+    ;
 
 
     if ($add_do) {
@@ -3738,7 +3748,8 @@ use B::Deparse;
 our @ISA=qw(B::Deparse);
 my %cache;
 
-our $VERSION = '2.37';
+our $VERSION = '2.37_01';
+$VERSION= eval $VERSION;
 if ( $VERSION ne $Data::Dump::Streamer::VERSION ) {
     die "Incompatible Data::Dump::Streamer::Deparser v$VERSION vs Data::Dump::Streamer v$Data::Dump::Streamer::VERSION";
 }
