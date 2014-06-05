@@ -183,6 +183,8 @@ sub normalize {
         s/\(0x[0-9a-fA-F]+\)/(0xdeadbeef)/g;
         s/\r\n/\n/g;
         s/\s+$//gm;
+        s{\\\\undef}{\\do { my \$v = \\do { my \$v = undef } }}g
+            if $] < 5.020;
         $_.="\n";
 
         #warn "<after>\n$_</after>\n";
