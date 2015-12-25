@@ -1187,7 +1187,7 @@ the names to use for the variables being dumped by using PadWalker to
 have a poke around the calling lexical scope to see what is declared. If
 a name for a var can't be found then it will be named according to the
 normal scheme. When PadWalker isn't installed this is just a wrapper for
-L<Dump()|Dump>.
+L<Dump()|/Dump>.
 
 Thanks to Ovid for the idea of this. See L<Data::Dumper::Simple> for a
 similar wrapper around L<Data::Dumper>.
@@ -1243,11 +1243,11 @@ sub DumpLex {
 
 =item DumpVars PAIRS
 
-This is wrapper around L<Dump()|Dump> which expect to receive
+This is wrapper around L<Dump()|/Dump> which expect to receive
 a list of name=>value pairs instead of a list of values.
-Otherwise behaves like L<Dump()|Dump>. Note that names starting
+Otherwise behaves like L<Dump()|/Dump>. Note that names starting
 with a '-' are treated the same as those starting with '*' when
-passed to L<Names()|Names>.
+passed to L<Names()|/Names>.
 
 =cut
 
