@@ -110,12 +110,19 @@ sub _same {
     s/\(0x[0-9a-xA-X]+\)/(0xdeadbeef)/g for $str1, $str2;
     my @vars = $str2 =~ m/^(?:my\s*)?(\$\w+)\s*=/gm;
 
+    for ($str1, $str2) {
+        s/^\s+# use warnings;\n//mg;
+        s/^\s+# use strict[^;]*;\n//mg;
+        s/# ;/#/g;
+    }
+
     #warn "@vars";
     unless ( ok( "\n" . $str1 eq "\n" . $str2, $name ) ) {
         if ( $str2 =~ /\S/ ) {
             eval {
                 print string_diff( "\n" . $str2, "\n" . $str1, "Expected", "Result" );
                 print "Got:\n" . $str1 . "\n";
+                1;
               }
               or do {
                 print "Expected:\n$str2\nGot:\n$str1\n";
