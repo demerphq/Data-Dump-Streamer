@@ -11,7 +11,7 @@ lib/Data/Dump/Streamer/_/Printers.pm
 MANIFEST			This list of files
 MANIFEST.SKIP
 META.yml
-README
+README.md
 t/as.t
 t/blessed.t
 t/dogpound.t

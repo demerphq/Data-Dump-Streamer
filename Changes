@@ -1,3 +1,9 @@
+2.40
+
+Fixup issues with JSON and with non-Padwalker builds (thanks to FC)
+various other tweaks and cleanups to build on newer Perls. Updated
+meta files, etc.
+
 2.37
 
 Various changes. See github log for changes.
