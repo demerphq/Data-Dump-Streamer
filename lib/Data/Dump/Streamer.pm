@@ -3709,13 +3709,12 @@ sub _get_lexicals {
 
     my $svo=B::svref_2object($cv);
     my @pl_array = eval { $svo->PADLIST->ARRAY };
-
     my @name_obj = eval { $pl_array[0]->ARRAY };
 
     my %named;
     for my $i ( 0..$#name_obj ) {
         if ( ref($name_obj[$i])!~/SPECIAL/) {
-            $named{$i} = "${ $name_obj[$i]->object_2svref }";
+            $named{$i} = $name_obj[$i]->PV;
         }
     }
 
