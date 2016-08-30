@@ -2765,6 +2765,9 @@ sub _dump_code {
         #$self->{fh}->print("\n#",join " ",keys %$used,"\n");
 
         #$code=~s/^\s*(\([^)]+\)|)\s*/sub$1\n/;
+
+        $code=~s/(\%\{)(\s*\{\}\s*)/$1;$2/g;
+
         $code="sub".($code=~/^\s*\(/ ? "" : " ").$code;
         if ($self->{style}{indent}) {
             $code=~s/\n/"\n"." " x $indent/meg;
