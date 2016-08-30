@@ -230,7 +230,7 @@ format STDOUT =
     else {
         $expected_dot = 'undef';
     }
-    my $jstrue= JSON::XS::decode_json("true");
+    my $jstrue= JSON::XS::decode_json("[true]")->[0];
     my %hash = (
         UND => undef,
         IV  => 1,
@@ -392,7 +392,7 @@ EXPECT
     }
     # In JSON::XS < 3, the boolean class is JSON::XS::Boolean
     # In JSON::XS >= 3, the boolean class is JSON::PP::Boolean
-    my $json_boolean_class = ref JSON::XS::decode_json("true");
+    my $json_boolean_class = ref JSON::XS::decode_json("[true]")->[0];
     $expect =~ s{JSON::XS::Boolean}{$json_boolean_class}g;
     same( $dump= $o->Data(\%hash)->Out, template( $expect, expected_dot => $expected_dot ), "", $o);
 }
