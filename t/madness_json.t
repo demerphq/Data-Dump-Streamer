@@ -392,7 +392,7 @@ EXPECT
     # In Cpanel::JSON::XS before 3.0201, the boolean class is JSON::XS::Boolean
     # and thereafter it is JSON::PP::Boolean
     my $json_boolean_class = ref Cpanel::JSON::XS::decode_json("[true]")->[0];
-    $expect =~ s{Cpane::JSON::XS::Boolean}{$json_boolean_class}g;
+    $expect =~ s{Cpanel::JSON::XS::Boolean}{$json_boolean_class}g;
     same( $dump= $o->Data(\%hash)->Out, template( $expect, expected_dot => $expected_dot ), "", $o);
 }
 
