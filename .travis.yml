@@ -1,7 +1,7 @@
 language: perl
 before_install:
- - '[ "$WITH_JSON_XS"   = "2" ] && cpanm --quiet --notest "JSON::XS~<3.00"  || true'
- - '[ "$WITH_JSON_XS"   = "3" ] && cpanm --quiet --notest "JSON::XS~>=3.00"  || true'
+  - '[ "$WITH_CPANEL_JSON_XS"   = "2" ] && cpanm --quiet --notest "Cpanel::JSON::XS~<3.0201"  || true'
+ - '[ "$WITH_CPANEL_JSON_XS"   = "3" ] && cpanm --quiet --notest "Cpanel::JSON::XS~>=3.0201"  || true'
  - '[ "$WITH_PADWALKER" = "yes" ] && cpanm --quiet --notest PadWalker || true'
 matrix:
  include:
