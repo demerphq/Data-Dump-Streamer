@@ -49,3 +49,4 @@ DDS\.pm
 ^MYMETA.yml$
 ^MYMETA\.json$
 .travis.yml
+tidyall.sh
