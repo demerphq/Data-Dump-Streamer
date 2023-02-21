@@ -1285,7 +1285,7 @@ sub DumpVars {
 sub _reg_ref {
     my ($self,$item,$depth,$name,$cnt,$arg)=@_;
 
-    warn "_ref_ref($depth,$name,$cnt)\n" if $DEBUG;
+    print "_reg_ref($depth,$name,$cnt)\n" if $DEBUG;
 
     my $addr=refaddr $item;
     $arg->{raddr}=$addr if $arg;
@@ -1385,6 +1385,7 @@ Returns $self.
 
 sub _add_queue {
     my ($self,$queue,$type,$item,$depth,$name,$rcount,$arg)=@_;
+    print "add_queue($name)\n" if $DEBUG;
     if (substr($type,0,1) ne '*') {
         push @$queue,[\$item,$depth,$name,$rcount,$arg];
     } elsif($self->{style}{dumpglob}) {
@@ -1451,6 +1452,7 @@ PASS:{
         my %lex_name;
         my %lex_special;
 
+        ITEM:
         while (@queue) {
             # If the scalar (container) is of any interest it is
             # already registered by the time we see it here.
@@ -1465,8 +1467,6 @@ PASS:{
                 $rcnt,
                 $arg)=@{shift @queue};
 
-
-
             my ($frozen,$item,$raddr,$class);
             DEQUEUE:{
                 $item=$$ritem;
@@ -1475,7 +1475,11 @@ PASS:{
 
                 if ($self->{ref_fz}{$raddr}) {
                     print "Skipping frozen element $raddr\n" if $DEBUG;
-                    next;
+                    next ITEM;
+                }
+                if ($cname=~/^\*DB::args/) {
+                    print "Skipping \*DB::args\n" if $DEBUG;
+                    next ITEM;
                 }
 
                 $DEBUG and
@@ -1484,7 +1488,7 @@ PASS:{
                 unless ($raddr) {
                     $DEBUG and
                     print "  Skipping '$cname' as it isn't a reference.\n";
-                    next;
+                    next ITEM;
                 }
 
                 last DEQUEUE if $frozen;
@@ -1493,11 +1497,12 @@ PASS:{
                     $DEBUG and
                     print "Ignoring '$cname' as its class ($class) in ".
                           "our ignore list.\n";
-                    next;
+                    next ITEM;
                 } elsif ($class && !$self->{"cache_skip_freeze"}{$class}) {
                     my $freezer= $self->{cache_freeze_class}{$class};
                     my ( $proxy, $thaw, $postop );
                     if (! defined $freezer ) {
+                        TRY_FREEZE:
                         for ( $self->{style}{freeze_class}{$class},
                               $self->{style}{freezer},
                               'DDS_freeze' )
@@ -1508,15 +1513,15 @@ PASS:{
                                     eval {
                                         ($proxy,$thaw,$postop)= $freezer->($$ritem);
                                     };
-                                    last if !$@;
+                                    last TRY_FREEZE if !$@;
                                 } elsif ( $class->can($freezer) ) {
                                     eval {
                                         ($proxy,$thaw,$postop)= ${$ritem}->$freezer();
                                     };
-                                    last if !$@;
+                                    last TRY_FREEZE if !$@;
                                 }
                             } elsif ( defined $freezer ) {
-                                last;
+                                last TRY_FREEZE;
                             }
                         }
                         if (! defined $proxy) {
@@ -1541,15 +1546,13 @@ PASS:{
                         $ritem= \$proxy;
                         if (ref $proxy) {
                             redo DEQUEUE;
-                        } else {
-                            next;
                         }
                     }
                 }
-
-            }
+            } # DEQUEUE
 
             my ($idx,$dupe)=$self->_reg_ref($item,$cdepth,$cname,$rcnt,$arg);
+
             $DEBUG and print "  Skipping '$cname' as it is a dupe of ".
                              "$self->{refn}[$idx]\n"
                 if $dupe;
@@ -2075,7 +2078,7 @@ sub Out {
 
     if ($self->{style}{special}) {
 
-        warn DDumper(\@items) if $DEBUG;
+        print DDumper(\@items) if $DEBUG;
 
         $namestr="# (".join (", ",@{$self->{out_names}}).")\n";
 
@@ -2088,7 +2091,7 @@ sub Out {
 
 
 
-        warn DDumper(\@items) if $DEBUG;
+        print DDumper(\@items) if $DEBUG;
     }
 
     if ($self->{style}{compress} && $self->{style}{compressor}) {
