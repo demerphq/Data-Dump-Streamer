@@ -41,7 +41,7 @@ $DEBUG= 0;
 BEGIN { $HasPadWalker= eval "use PadWalker 0.99; 1"; }
 
 BEGIN {
-    $VERSION= '2.41';
+    $VERSION= '2.42';
     $XS_VERSION= $VERSION;
     $VERSION= eval $VERSION;    # used for beta stuff.
     @ISA= qw(Exporter DynaLoader);
@@ -3992,7 +3992,7 @@ use B::Deparse;
 our @ISA= qw(B::Deparse);
 my %cache;
 
-our $VERSION= '2.41';
+our $VERSION= '2.42';
 $VERSION= eval $VERSION;
 if ($VERSION ne $Data::Dump::Streamer::VERSION) {
     die
