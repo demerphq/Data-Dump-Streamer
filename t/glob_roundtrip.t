@@ -78,4 +78,39 @@ for my $anonymous (0, 1) {
     }
 }
 
+{
+    no strict 'refs';
+
+    for my $name ("DDSGlobRoundtrip::\x{100}", "DDSGlob\x{100}::source",
+        "\x{100}")
+    {
+        local *{$name};
+        my $glob= \*{$name};
+        my $text= Dump($glob)->DumpGlob(0)->Terse(1)->Out;
+        my $copy= eval $text;
+        my $label= $name;
+        $label =~ s/([^\x00-\x7f])/sprintf 'U+%04X', ord($1)/ge;
+        is($@, '', "$label: reference output evaluates") or diag $text;
+        is(refaddr($copy), refaddr($glob),
+            "$label: reference names the same glob");
+
+        my $original= { value => [42] };
+        *{$glob}= $original;
+        $text= Dump($glob)->Names('value')->Out;
+        *{$glob}= {};
+        my $value;
+        $copy= eval $text . '$value';
+        is($@, '', "$label: slot output evaluates") or diag $text;
+        SKIP: {
+            skip 'slot output did not evaluate', 3 if $@;
+            is(refaddr($copy), refaddr($glob),
+                "$label: rebuilt slot belongs to the same glob");
+            my $rebuilt= *{$copy}{HASH};
+            isnt(refaddr($rebuilt), refaddr($original),
+                "$label: slot is newly constructed");
+            is_deeply($rebuilt, $original, "$label: slot contents survive");
+        }
+    }
+}
+
 done_testing;

@@ -426,7 +426,7 @@ SV *dds_glob_name(pTHX_ GV *gv)
 
     out = DDS_TEMP(newSVpvs("*"));
     if (quote) {
-        SV *value = DDS_TEMP(newSVpvn(p, len));
+        SV *value = dds_string_slice(aTHX_ name, (STRLEN)(p - SvPVX(name)), len);
 
         sv_catpvs(out, "{");
         DDS_CAT(out, dds_quote(aTHX_ value, FALSE));

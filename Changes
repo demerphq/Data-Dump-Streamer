@@ -76,6 +76,8 @@ Retain UTF-8 encoding when copying escaped wide regexp characters into
 generated source, so reconstruction does not reinterpret individual bytes.
 Load compression dependencies lazily during decompression as well as
 compression, allowing generated dumps to run in a fresh interpreter.
+Preserve UTF-8 in quoted glob names, including Unicode package names and
+shortened main-package names, so reconstruction selects the original glob.
 
 Apply the preferred source formatting and fix serialization of the global
 stash. Add a regression test for dumping the global stash.
