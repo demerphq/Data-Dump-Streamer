@@ -437,8 +437,9 @@ static XS(dds_xs_dump)
 
     lexical_names = kind == DDS_DUMP_LEX && SvTRUE(get_sv("Data::Dump::Streamer::HasPadWalker", 0));
 
-    /* Named entry points replace captured roots even with no arguments.
-     * Without PadWalker, DumpLex follows ordinary Dump capture rules. */
+    /* Scalar-context named entry points capture even an empty argument list.
+     * Output calls without arguments reuse existing roots. Without PadWalker,
+     * DumpLex follows ordinary Dump capture rules. */
     capture_empty = named_pairs || lexical_names;
 
     if (lexical_names) {

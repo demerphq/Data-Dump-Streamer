@@ -297,8 +297,8 @@ sub _xs_code_text {
     return;
 }
 
-# Produce an expression reconstructing a format reference, or the configured
-# format stub when deparsing is disabled or unavailable.
+# Reconstruct a format reference, using formatstub when deparsing is disabled
+# or no format is found. A deparse exception produces a diagnostic format body.
 sub _xs_format_text {
 
     # from link from [ysth]: http://groups.google.com/groups?selm=laUs8gzkgOlT092yn%40efn.org
