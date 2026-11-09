@@ -7,6 +7,7 @@ build_requires:
   Config: '0'
   Devel::Peek: '0'
   ExtUtils::MakeMaker: '0'
+  File::Temp: '0'
   Scalar::Util: '0'
   Test::More: '0'
   base: '0'

@@ -74,6 +74,8 @@ Preserve literal Unicode pattern whitespace in extended regexps instead
 of turning ignored characters into required hex escapes.
 Retain UTF-8 encoding when copying escaped wide regexp characters into
 generated source, so reconstruction does not reinterpret individual bytes.
+Load compression dependencies lazily during decompression as well as
+compression, allowing generated dumps to run in a fresh interpreter.
 
 Apply the preferred source formatting and fix serialization of the global
 stash. Add a regression test for dumping the global stash.

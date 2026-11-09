@@ -16,6 +16,7 @@ README.md
 t/as.t
 t/blessed.t
 t/catalogue_lifetimes.t
+t/compression_roundtrip.t
 t/dogpound.t
 t/dump.t
 t/filter.t

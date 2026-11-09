@@ -162,9 +162,11 @@ sub sqz {
         : MIME::Base64::encode($res, "");
 }
 
-# Decode and decompress a string emitted by sqz; the compression modules must
-# already be loaded.
+# Decode and decompress a string emitted by sqz, loading the optional
+# compression modules in the reconstruction interpreter as needed.
 sub usqz {
+    require Compress::Zlib;
+    require MIME::Base64;
     return Compress::Zlib::uncompress(MIME::Base64::decode($_[0]));
 }
 

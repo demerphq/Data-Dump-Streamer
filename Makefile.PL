@@ -88,7 +88,7 @@ WriteMakefile(
     TEST_REQUIRES => {
         map { $_ => 0 }
             qw(
-            Carp Config Devel::Peek Scalar::Util Test::More base overload utf8
+            Carp Config Devel::Peek File::Temp Scalar::Util Test::More base overload utf8
             )
     },
     META_MERGE => {

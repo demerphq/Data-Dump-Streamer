@@ -60,6 +60,7 @@
             "Carp" : "0",
             "Config" : "0",
             "Devel::Peek" : "0",
+            "File::Temp" : "0",
             "Scalar::Util" : "0",
             "Test::More" : "0",
             "base" : "0",
