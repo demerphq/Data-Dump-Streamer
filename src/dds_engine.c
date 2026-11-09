@@ -3,6 +3,9 @@
 
 /* Facade accessors return borrowed values; newly created containers are
  * owned by the facade hash that receives them. */
+/* Fetch a borrowed facade value by a byte-string key, returning Perl's undef
+ * singleton when the hash or key is absent.
+ */
 SV *dds_hget(pTHX_ HV *hv, const char *key)
 {
     SV **svp = hv ? hv_fetch(hv, key, (I32)strlen(key), 0) : NULL;
@@ -10,6 +13,9 @@ SV *dds_hget(pTHX_ HV *hv, const char *key)
     return svp ? *svp : &PL_sv_undef;
 }
 
+/* Fetch a borrowed value using an SV key so UTF-8 key semantics are preserved;
+ * return undef when absent.
+ */
 SV *dds_hget_sv(pTHX_ HV *hv, SV *key)
 {
     HE *entry = hv ? hv_fetch_ent(hv, key, 0, 0) : NULL;
@@ -17,6 +23,9 @@ SV *dds_hget_sv(pTHX_ HV *hv, SV *key)
     return entry ? HeVAL(entry) : &PL_sv_undef;
 }
 
+/* Return a borrowed hash stored in the facade, optionally replacing a missing
+ * or unsuitable value with a new hash.
+ */
 HV *dds_hash(pTHX_ HV *hv, const char *key, bool create)
 {
     SV *sv = dds_hget(aTHX_ hv, key);
@@ -32,6 +41,9 @@ HV *dds_hash(pTHX_ HV *hv, const char *key, bool create)
     return result;
 }
 
+/* Return a borrowed array stored in the facade, optionally replacing a missing
+ * or unsuitable value with a new array.
+ */
 AV *dds_array(pTHX_ HV *hv, const char *key, bool create)
 {
     SV *sv = dds_hget(aTHX_ hv, key);
@@ -47,8 +59,16 @@ AV *dds_array(pTHX_ HV *hv, const char *key, bool create)
     return result;
 }
 
-/* Pointer hashing follows Sereal's ptable.h, derived from the Perl pointer
- * table and Chocolateboy's autobox implementation, under Perl's license. */
+/*
+ * Identity catalogue
+ *
+ * Address keys find stable metadata records. They are never converted back
+ * into graph SVs.
+ */
+
+/* Mix an opaque address into a table hash. The algorithm follows Sereal's
+ * ptable.h, derived from Perl's pointer table and Chocolateboy's autobox
+ * implementation, under Perl's license. */
 static UV dds_pointer_hash(UV address)
 {
     UV x = address;
@@ -60,6 +80,9 @@ static UV dds_pointer_hash(UV address)
     return x;
 }
 
+/* Look up an SV's opaque address in the identity table, optionally creating a
+ * stable catalogue node and growing the table.
+ */
 dds_node *dds_find(pTHX_ dds_ctx *ctx, SV *sv, bool create)
 {
     dds_table *table = &ctx->table;
@@ -116,6 +139,9 @@ dds_node *dds_find(pTHX_ dds_ctx *ctx, SV *sv, bool create)
     return node;
 }
 
+/* Return the borrowed back-reference storage for this Perl's SV layout, or
+ * NULL when none is present.
+ */
 static SV *dds_backrefs(pTHX_ SV *sv)
 {
 #if PERL_VERSION >= 22
@@ -131,6 +157,9 @@ static SV *dds_backrefs(pTHX_ SV *sv)
 #endif
 }
 
+/* Count weak RVs pointing at this SV, excluding other kinds of back references
+ * in the same storage.
+ */
 UV dds_weak_count(pTHX_ SV *sv)
 {
     SV *refs = dds_backrefs(aTHX_ sv);
@@ -154,6 +183,9 @@ UV dds_weak_count(pTHX_ SV *sv)
     return count;
 }
 
+/* Test whether an ordinary SV may need identity tracking because of its strong
+ * count or back references; exclude immortal constants.
+ */
 bool dds_candidate(pTHX_ SV *sv)
 {
     if (!sv || sv == &PL_sv_undef || sv == &PL_sv_yes || sv == &PL_sv_no)
@@ -163,6 +195,9 @@ bool dds_candidate(pTHX_ SV *sv)
     return SvREFCNT(sv) > 1 || dds_backrefs(aTHX_ sv) != NULL;
 }
 
+/* Return a mortal class-name string with the stash's UTF-8 flag, or undef for
+ * an unblessed value.
+ */
 SV *dds_class(pTHX_ SV *sv)
 {
     SV *name;
@@ -177,6 +212,16 @@ SV *dds_class(pTHX_ SV *sv)
     return name;
 }
 
+/*
+ * Context lifetime
+ *
+ * Emission cleanup keeps analysis reusable; catalogue cleanup releases
+ * analysis too. The facade magic destructor also releases roots and buffers.
+ */
+
+/* Release frames, pending output work and completion marks, then reset output
+ * state while keeping the analysis catalogue reusable.
+ */
 void dds_clear_emission(pTHX_ dds_ctx *ctx)
 {
     dds_mark *mark;
@@ -242,6 +287,9 @@ void dds_clear_emission(pTHX_ dds_ctx *ctx)
     ctx->final_weakening = FALSE;
 }
 
+/* Release emission state and catalogue-owned values, empty analysis queues and
+ * caches, and reset traversal statistics.
+ */
 void dds_clear_catalogue(pTHX_ dds_ctx *ctx)
 {
     UV i;
@@ -293,6 +341,9 @@ void dds_clear_catalogue(pTHX_ dds_ctx *ctx)
     ctx->queue_peak = ctx->fixes = 0;
 }
 
+/* Destroy the native context when its facade hash is freed, releasing retained
+ * roots, work buffers and owned Perl containers.
+ */
 static int dds_magic_free(pTHX_ SV *sv, MAGIC *mg)
 {
     dds_ctx *ctx = (dds_ctx *)mg->mg_ptr;
@@ -324,6 +375,9 @@ static int dds_magic_free(pTHX_ SV *sv, MAGIC *mg)
 
 static MGVTBL dds_magic_vtbl = {0, 0, 0, 0, dds_magic_free, 0, 0, 0};
 
+/* Validate the dumper facade and return its attached native context, creating
+ * and attaching one on first use.
+ */
 dds_ctx *dds_context(pTHX_ SV *self)
 {
     HV *hv;
@@ -351,6 +405,9 @@ dds_ctx *dds_context(pTHX_ SV *self)
     return ctx;
 }
 
+/* Retain a new root set before publishing it and releasing old roots, so
+ * destructor reentry cannot observe dying input.
+ */
 void dds_capture(pTHX_ dds_ctx *ctx, I32 count, SV **args)
 {
     I32 i;
@@ -377,6 +434,9 @@ void dds_capture(pTHX_ dds_ctx *ctx, I32 count, SV **args)
     Safefree(old_roots);
 }
 
+/* Snapshot facade formatting options into native fields and own copies of
+ * string values for the active operation.
+ */
 void dds_load_style(pTHX_ dds_ctx *ctx)
 {
     HV *style = dds_hash(aTHX_ ctx->object, "style", FALSE);
@@ -424,6 +484,13 @@ void dds_load_style(pTHX_ dds_ctx *ctx)
 #undef BOOL
 }
 
+/*
+ * Operations and Perl callbacks
+ *
+ * The ordinary graph walk borrows SVs. Entering Perl code enables keepalive
+ * protection for live traversal work and exception-safe operation cleanup.
+ */
+
 /* Called only when Perl code can run. Retain current work, never values
  * recovered from catalogue addresses. Ordinary graph walks borrow SVs. */
 void dds_callback_guard(pTHX_ dds_ctx *ctx)
@@ -462,6 +529,9 @@ typedef struct {
     bool committed;
 } dds_operation;
 
+/* Clear the busy guard on scope exit and discard partial analysis when an
+ * operation unwinds without committing.
+ */
 static void dds_operation_cleanup(pTHX_ void *ptr)
 {
     dds_operation *operation = (dds_operation *)ptr;
@@ -478,6 +548,9 @@ static void dds_operation_cleanup(pTHX_ void *ptr)
     Safefree(operation);
 }
 
+/* Protect the dumper for an operation, reject concurrent use of its context
+ * and install exception-safe scope cleanup.
+ */
 void *dds_operation_begin(pTHX_ dds_ctx *ctx, SV *self)
 {
     dds_operation *operation;
@@ -495,11 +568,17 @@ void *dds_operation_begin(pTHX_ dds_ctx *ctx, SV *self)
     return operation;
 }
 
+/* Mark an operation successful so scope cleanup preserves its completed
+ * catalogue.
+ */
 void dds_operation_commit(void *operation)
 {
     ((dds_operation *)operation)->committed = TRUE;
 }
 
+/* Invoke Perl code or a method with protected arguments and active graph
+ * values; return a mortal scalar or array reference for list results.
+ */
 SV *dds_invoke(pTHX_ dds_ctx *ctx, SV *callable, bool method, I32 flags, I32 argc, SV **argv)
 {
     dSP;
@@ -555,6 +634,9 @@ SV *dds_invoke(pTHX_ dds_ctx *ctx, SV *callable, bool method, I32 flags, I32 arg
     return result;
 }
 
+/* Invoke a named Perl function, or prepend an invocant and dispatch a named
+ * method, using the common callback guard.
+ */
 SV *dds_call(pTHX_ dds_ctx *ctx, const char *sub, SV *invocant, I32 flags, I32 argc, SV **argv)
 {
     SV *callable = DDS_TEMP(newSVpv(sub, 0));
@@ -572,6 +654,9 @@ SV *dds_call(pTHX_ dds_ctx *ctx, const char *sub, SV *invocant, I32 flags, I32 a
     return dds_invoke(aTHX_ ctx, callable, FALSE, flags, argc, argv);
 }
 
+/* Select and cache a class freezer, returning its proxy/thaw/postdump tuple as
+ * a list reference or undef when no hook applies.
+ */
 SV *dds_freeze(pTHX_ dds_ctx *ctx, SV *rv)
 {
     SV *target = SvRV(rv), *class_name = dds_class(aTHX_ target);

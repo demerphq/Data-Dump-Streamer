@@ -1,6 +1,9 @@
 #define NEED_utf8_to_uvchr_buf
 #include "dds_engine.h"
 
+/* Recognize decimal spellings accepted for unquoted output, excluding
+ * leading-zero integers and trailing-zero fractions.
+ */
 static bool dds_decimal(const char *p, STRLEN len)
 {
     STRLEN i = 0;
@@ -28,6 +31,9 @@ static bool dds_decimal(const char *p, STRLEN len)
     return i == len && p[len - 1] != '0';
 }
 
+/* Build a mortal double-quoted Perl expression, escaping interpolation and
+ * controls while preserving the input's UTF-8 flag.
+ */
 SV *dds_qquote(pTHX_ SV *value)
 {
     STRLEN len, offset = 0, chars = 0;
@@ -106,6 +112,9 @@ SV *dds_qquote(pTHX_ SV *value)
     return DDS_TEMP(out);
 }
 
+/* Choose a numeric, bareword, single-quoted or double-quoted representation
+ * suitable for a hash key or scalar value.
+ */
 SV *dds_quote(pTHX_ SV *value, bool key)
 {
     STRLEN len, i;
@@ -148,7 +157,7 @@ SV *dds_quote(pTHX_ SV *value, bool key)
     return DDS_TEMP(out);
 }
 
-/* Name slices are Perl character strings, even when offsets are bytes. */
+/* Return a mortal byte slice of a name while retaining its UTF-8 flag. */
 static SV *dds_name_slice(pTHX_ SV *name, STRLEN start, STRLEN length)
 {
     STRLEN len;
@@ -160,6 +169,9 @@ static SV *dds_name_slice(pTHX_ SV *name, STRLEN start, STRLEN length)
     return slice;
 }
 
+/* Find the byte offset after a run of identifier characters, decoding UTF-8
+ * when the name carries that flag.
+ */
 static STRLEN dds_word_end(pTHX_ SV *name, STRLEN start)
 {
     STRLEN len, at = start;
@@ -179,6 +191,9 @@ static STRLEN dds_word_end(pTHX_ SV *name, STRLEN start)
     return at;
 }
 
+/* Recover a mortal inner expression from a simple or braced scalar
+ * dereference, returning NULL when it cannot be safely unwrapped.
+ */
 SV *dds_underef(pTHX_ SV *name)
 {
     STRLEN len;
@@ -215,6 +230,9 @@ SV *dds_underef(pTHX_ SV *name)
     return NULL;
 }
 
+/* Construct a mortal expression for an array/hash child or a dereferenced
+ * slot, adjusting sigils and braces for valid Perl syntax.
+ */
 SV *dds_child_name(pTHX_ SV *parent, char kind, SV *key, IV child_index)
 {
     SV *out = DDS_TEMP(newSVsv(parent));
@@ -293,6 +311,9 @@ SV *dds_clean_name(pTHX_ SV *name)
     return out;
 }
 
+/* Choose a root expression from an explicit name or a unique type-derived
+ * name, honoring verbose and abbreviation settings.
+ */
 SV *dds_name(pTHX_ dds_ctx *ctx, SV *sv, UV root_index)
 {
     AV *names = dds_array(aTHX_ ctx->object, "unames", FALSE);
@@ -382,6 +403,9 @@ SV *dds_name(pTHX_ dds_ctx *ctx, SV *sv, UV root_index)
     return out;
 }
 
+/* Build a mortal Perl glob expression, shortening main-package names and
+ * quoting names that require protection.
+ */
 SV *dds_glob_name(pTHX_ GV *gv)
 {
     SV *name = DDS_TEMP(newSV(0)), *out;
@@ -418,6 +442,16 @@ typedef struct {
     bool numeric;
 } dds_key;
 
+/*
+ * Key ordering
+ *
+ * Native comparators operate on prepared key records. Policy selection and
+ * callbacks choose the order before values are traversed.
+ */
+
+/* Compare smart-order keys by numeric-prefix status and value, then folded
+ * word text and the original key as a tie-breaker.
+ */
 static int dds_key_compare(const void *a, const void *b)
 {
     const dds_key *left = (const dds_key *)a, *right = (const dds_key *)b;
@@ -433,6 +467,7 @@ static int dds_key_compare(const void *a, const void *b)
     return cmp ? cmp : sv_cmp(left->key, right->key);
 }
 
+/* Compare original key strings for lexical and alphabetical ordering. */
 static int dds_key_lexical(const void *a, const void *b)
 {
     dTHX;
@@ -440,6 +475,7 @@ static int dds_key_lexical(const void *a, const void *b)
     return sv_cmp(((const dds_key *)a)->key, ((const dds_key *)b)->key);
 }
 
+/* Compare the numeric values prepared for numeric key ordering. */
 static int dds_key_numeric(const void *a, const void *b)
 {
     const dds_key *left = (const dds_key *)a, *right = (const dds_key *)b;
@@ -447,6 +483,9 @@ static int dds_key_numeric(const void *a, const void *b)
     return left->number < right->number ? -1 : left->number > right->number ? 1 : 0;
 }
 
+/* Resolve a nonempty prefix of a supported built-in key-order mode, returning
+ * NULL for an unknown or undefined mode.
+ */
 const char *dds_builtin_order(pTHX_ SV *mode)
 {
     static const char *names[] = {"numeric", "lexical",     "alphabetical",
@@ -466,6 +505,9 @@ const char *dds_builtin_order(pTHX_ SV *mode)
     return NULL;
 }
 
+/* Return a mortal ordered key list using object/class policies or native
+ * sorting; expose a callback thaw action through the optional out parameter.
+ */
 AV *dds_keys(pTHX_ dds_ctx *ctx, HV *hv, I32 pass, SV **thaw)
 {
     HV *style = dds_hash(aTHX_ ctx->object, "style", FALSE);
@@ -655,6 +697,9 @@ AV *dds_keys(pTHX_ dds_ctx *ctx, HV *hv, I32 pass, SV **thaw)
     return result;
 }
 
+/* Collect restricted-hash placeholder keys without disturbing the caller's
+ * iterator, returning a sorted mortal array.
+ */
 AV *dds_hidden_keys(pTHX_ HV *hv)
 {
     AV *keys = (AV *)DDS_TEMP((SV *)newAV());
@@ -672,6 +717,16 @@ AV *dds_hidden_keys(pTHX_ HV *hv)
     return keys;
 }
 
+/*
+ * Regexp literals
+ *
+ * Inspection and quoting are separate: recover the original pattern and flags,
+ * then protect them from Perl interpolation and delimiter parsing.
+ */
+
+/* Recognize a regexp referent using the representation supported by the
+ * current interpreter.
+ */
 bool dds_is_regexp(pTHX_ SV *target)
 {
 #if PERL_VERSION >= 11
@@ -684,6 +739,9 @@ bool dds_is_regexp(pTHX_ SV *target)
 #endif
 }
 
+/* Build a mortal qr expression that preserves pattern text and modifiers
+ * through delimiter escaping and sigil interpolation.
+ */
 SV *dds_regex(pTHX_ dds_ctx *ctx, SV *rv)
 {
     SV *values, *pattern, *mods, *out;
@@ -793,6 +851,9 @@ SV *dds_regex(pTHX_ dds_ctx *ctx, SV *rv)
     return out;
 }
 
+/* Send text to the configured print callback or append it to buffered output,
+ * maintaining list-context output chunks when requested.
+ */
 void dds_write(pTHX_ dds_ctx *ctx, SV *text)
 {
     if (ctx->printer) {
@@ -814,11 +875,13 @@ void dds_write(pTHX_ dds_ctx *ctx, SV *text)
     }
 }
 
+/* Write a NUL-terminated C string through the common output path. */
 void dds_put(pTHX_ dds_ctx *ctx, const char *text)
 {
     dds_write(aTHX_ ctx, DDS_TEMP(newSVpv(text, 0)));
 }
 
+/* Write a nonnegative run of spaces for output indentation and alignment. */
 void dds_spaces(pTHX_ dds_ctx *ctx, IV count)
 {
     SV *space;

@@ -1,9 +1,20 @@
 #include "dds_engine.h"
 
-/* Scalar slots and their referents have distinct catalogue roles. Queue
- * depths count both visits. Depth buckets choose canonical names at minimum
- * depth before depth-first emission chooses where to construct referents. */
+/*
+ * Breadth-first analysis
+ *
+ * Scalar slots and their referents have distinct catalogue roles. Queue depths
+ * count both visits. Depth buckets choose canonical names at minimum depth
+ * before depth-first emission chooses where to construct referents.
+ *
+ * Seed every root, drain the shallowest pending queue level, then reconcile
+ * discovered closure roots. New roots or improved names restart analysis
+ * before the catalogue is published.
+ */
 
+/* Record a scalar slot's canonical name, depth and alias properties when it
+ * may be shared; forced roots are always catalogued.
+ */
 static void dds_register_slot(pTHX_ dds_ctx *ctx, SV *sv, UV depth, SV *name, UV count, bool force)
 {
     dds_node *node;
@@ -39,6 +50,9 @@ static void dds_register_slot(pTHX_ dds_ctx *ctx, SV *sv, UV depth, SV *name, UV
     role->encounters++;
 }
 
+/* Queue a borrowed value at its traversal depth, owning a copy of its path and
+ * retaining the value if callbacks have already been enabled.
+ */
 static void dds_enqueue(pTHX_ dds_ctx *ctx, SV *sv, UV depth, SV *name, bool direct)
 {
     dds_queue_entry *entry;
@@ -87,6 +101,9 @@ static void dds_enqueue(pTHX_ dds_ctx *ctx, SV *sv, UV depth, SV *name, bool dir
         av_push(ctx->keepalive, SvREFCNT_inc(sv));
 }
 
+/* Remove the next item from the shallowest nonempty depth bucket, preserving
+ * FIFO order among paths at that depth.
+ */
 static UV dds_dequeue(dds_ctx *ctx)
 {
     dds_queue_level *level;
@@ -104,6 +121,9 @@ static UV dds_dequeue(dds_ctx *ctx)
     return position;
 }
 
+/* Return the borrowed scalar, hash, array, code or format slot selected from a
+ * glob, without creating an absent slot.
+ */
 static SV *dds_glob_slot(pTHX_ GV *gv, UV slot)
 {
     switch (slot) {
@@ -121,6 +141,9 @@ static SV *dds_glob_slot(pTHX_ GV *gv, UV slot)
     return NULL;
 }
 
+/* Schedule a reference or magical scalar for inspection, or schedule the
+ * enabled slots of a directly encountered glob.
+ */
 static void dds_enqueue_value(pTHX_ dds_ctx *ctx, SV *sv, UV depth, SV *name)
 {
     if (SvROK(sv) || SvGMAGICAL(sv))
@@ -150,6 +173,9 @@ static void dds_enqueue_value(pTHX_ dds_ctx *ctx, SV *sv, UV depth, SV *name)
     }
 }
 
+/* Register a child scalar slot and queue its value using the corresponding
+ * path, with scratch values scoped to this visit.
+ */
 static void dds_analyze_child(pTHX_ dds_ctx *ctx, SV *sv, UV depth, SV *parent, char kind, SV *key,
                               IV child_index)
 {
@@ -166,6 +192,9 @@ static void dds_analyze_child(pTHX_ dds_ctx *ctx, SV *sv, UV depth, SV *parent, 
 }
 
 #if defined(class_object_to_hash) && defined(PERL_MAGIC_class_storage)
+/* Choose a private class-field variable name that does not collide with any
+ * current root expression.
+ */
 static SV *dds_class_fields_name(pTHX_ dds_ctx *ctx)
 {
     SV *name = DDS_TEMP(newSV(0));
@@ -190,6 +219,9 @@ static SV *dds_class_fields_name(pTHX_ dds_ctx *ctx)
     return name;
 }
 
+/* Snapshot XPerl class fields into owned metadata and queue that snapshot
+ * separately from the object's ordinary payload.
+ */
 static void dds_analyze_class(pTHX_ dds_ctx *ctx, dds_node *node, SV *target, UV depth)
 {
     MAGIC *storage;
@@ -220,6 +252,9 @@ static void dds_analyze_class(pTHX_ dds_ctx *ctx, dds_node *node, SV *target, UV
 }
 #endif
 
+/* Test object-address and class-name ignore policies before expanding a
+ * referent.
+ */
 static bool dds_ignored(pTHX_ dds_ctx *ctx, SV *target)
 {
     HV *style = dds_hash(aTHX_ ctx->object, "style", FALSE);
@@ -239,6 +274,9 @@ static bool dds_ignored(pTHX_ dds_ctx *ctx, SV *target)
     return FALSE;
 }
 
+/* Discover a closure's captured variables, choose distinct lexical names and
+ * queue their values for graph analysis.
+ */
 static void dds_collect_lexicals(pTHX_ dds_ctx *ctx, SV *target, HV *lexrefs, HV *names, HV *used)
 {
     SV *args[1], *result;
@@ -296,6 +334,9 @@ static void dds_collect_lexicals(pTHX_ dds_ctx *ctx, SV *target, HV *lexrefs, HV
     }
 }
 
+/* Visit existing array slots, counting all visits but registering and
+ * expanding only values that need graph analysis.
+ */
 static void dds_analyze_array(pTHX_ dds_ctx *ctx, SV *target, UV depth, SV *name)
 {
     SSize_t k, last;
@@ -317,6 +358,9 @@ static void dds_analyze_array(pTHX_ dds_ctx *ctx, SV *target, UV depth, SV *name
     }
 }
 
+/* Visit hash values in the selected key order, retaining any thaw action and
+ * measuring key widths for later alignment.
+ */
 static void dds_analyze_hash(pTHX_ dds_ctx *ctx, dds_node *node, SV *target, UV depth, SV *name)
 {
     SV *thaw = NULL;
@@ -370,8 +414,8 @@ static void dds_analyze_hash(pTHX_ dds_ctx *ctx, dds_node *node, SV *target, UV 
     }
 }
 
-/* Each work item owns a temporary scope; callbacks retain only live
- * traversal work before they can mutate the graph or invoke Perl. */
+/* Analyze one queued value in its own temporary scope. Callback guards retain
+ * live traversal work before Perl code can mutate the graph. */
 static void dds_analyze_entry(pTHX_ dds_ctx *ctx, UV position, UV pass, HV *lexrefs, HV *lexnames,
                               HV *used_names)
 {
@@ -584,6 +628,9 @@ static bool dds_add_lexical_roots(pTHX_ dds_ctx *ctx, HV *lexrefs, HV *lexnames)
     return again;
 }
 
+/* Build the breadth-first catalogue of identities, minimum depths and
+ * canonical names, repeating when closure discovery adds or renames roots.
+ */
 void dds_analyze(pTHX_ dds_ctx *ctx)
 {
     UV pass = 0, i;

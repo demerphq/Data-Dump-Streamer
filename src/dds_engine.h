@@ -30,6 +30,18 @@
 #define DDS_HASH_NEXT(hv, he) HeNEXT(he)
 #endif
 
+/*
+ * Graph processing
+ *
+ * +----------------+     +----------------+     +----------------+     +----------------+
+ * | Capture roots  | --> | Analyze (BFS)  | --> |   Emit (DFS)   | --> | Fixups + hooks |
+ * +----------------+     +----------------+     +----------------+     +----------------+
+ *
+ * Data captures roots and builds the catalogue; Out can reuse that catalogue.
+ * Ready fixups may follow each root during emission. Final dependency
+ * resolution and postdump hooks finish the operation.
+ */
+
 typedef struct dds_node dds_node;
 typedef struct dds_mark dds_mark;
 typedef struct dds_ctx dds_ctx;

@@ -82,6 +82,7 @@ extern "C" {
 #    undef cxinc
 #  endif
 #  define cxinc() my_cxinc(aTHX)
+/* Grow the legacy interpreter context stack and return its next slot. */
 static I32
 my_cxinc(pTHX)
 {
@@ -108,7 +109,7 @@ my_cxinc(pTHX)
    As is much of the code in _globname and globname
 */
 
-/* does a string need to be protected? */
+/* Test whether a glob name needs quoting rather than bareword syntax. */
 static I32
 needs_q(register char *s)
 {
@@ -135,7 +136,7 @@ TOP:
     return 0;
 }
 
-/* count the number of "'"s and "\"s in string */
+/* Count the extra backslashes needed for a single-quoted byte string. */
 static I32
 num_q(register char *s, register STRLEN slen)
 {
@@ -151,9 +152,8 @@ num_q(register char *s, register STRLEN slen)
 }
 
 
-/* returns number of chars added to escape "'"s and "\"s in s */
-/* slen number of characters in s will be escaped */
-/* destination must be long enough for additional chars */
+/* Copy slen bytes with single-quote/backslash escaping and return the
+ * number of inserted bytes; the caller provides sufficient destination space. */
 static I32
 esc_q(register char *d, register char *s, register STRLEN slen)
 {
@@ -175,6 +175,9 @@ esc_q(register char *d, register char *s, register STRLEN slen)
 }
 
 XS(XS_Data__Dump__Streamer_SvREADONLY);
+/* Inspect or directly change the readonly flag of a supplied reference's
+ * referent.
+ */
 XS(XS_Data__Dump__Streamer_SvREADONLY)	/* This is dangerous stuff. */
 {
     dXSARGS;
@@ -200,6 +203,9 @@ XS(XS_Data__Dump__Streamer_SvREADONLY)	/* This is dangerous stuff. */
 }
 
 XS(XS_Data__Dump__Streamer_SvREFCNT);
+/* Inspect or directly replace a referent's raw strong count; the getter
+ * discounts the argument reference.
+ */
 XS(XS_Data__Dump__Streamer_SvREFCNT)	/* This is dangerous stuff. */
 {
     dXSARGS;
@@ -224,6 +230,8 @@ MODULE = B	PACKAGE = B::SV
 #define object_2svref(sv)	sv
 #define SVREF SV *
 
+# Recover a Perl reference from a B::SV wrapper on interpreters lacking the
+# core method.
 SVREF
 object_2svref(sv)
 	B::SV	sv
@@ -232,6 +240,8 @@ object_2svref(sv)
 
 MODULE = Data::Dump::Streamer		PACKAGE = Data::Dump::Streamer
 
+# Return a diagnostic snapshot of native traversal counts, queue usage and
+# retained callback values.
 SV *
 _xs_stats(self)
     SV *self
@@ -251,6 +261,8 @@ CODE:
 OUTPUT:
     RETVAL
 
+# Return copied diagnostic rows for scalar-slot and referent roles without
+# dereferencing catalogue address keys.
 SV *
 _xs_catalogue(self)
     SV *self
@@ -289,6 +301,8 @@ CODE:
 OUTPUT:
     RETVAL
 
+# Return references to a closure's captured pad values, indexed by both
+# lexical name and pad offset for the deparser.
 SV *
 _xs_get_lexicals(rv)
     SV *rv
@@ -341,6 +355,8 @@ CODE:
 OUTPUT:
     RETVAL
 
+# Construct a scalar with independently supplied numeric and string values,
+# preserving the string UTF-8 flag and input taint.
 void
 dualvar(num,str)
     SV *	num
@@ -374,6 +390,8 @@ CODE:
     XSRETURN(1);
 }
 
+# Test whether a scalar currently has both numeric and string value flags; the
+# values may still represent the same text.
 bool
 _could_be_dualvar(sv)
     SV * sv
@@ -386,6 +404,8 @@ OUTPUT:
     RETVAL
 
 
+# Replace an array element with the supplied scalar itself, preserving alias
+# identity and transferring a retained reference to the array.
 int
 alias_av(avref, key, val)
 	SV* avref
@@ -410,6 +430,8 @@ alias_av(avref, key, val)
     OUTPUT:
         RETVAL
 
+# Append the supplied scalar itself to an array, retaining the same SV instead
+# of copying its value.
 void
 push_alias(avref, val)
 	SV* avref
@@ -424,6 +446,8 @@ push_alias(avref, val)
 	SvREFCNT_inc(val);
 	av_push(av, val);
 
+# Replace a hash value with the supplied scalar itself, preserving alias
+# identity and retaining it for the hash.
 int
 alias_hv(hvref, key, val)
 	SV* hvref
@@ -449,6 +473,8 @@ alias_hv(hvref, key, val)
     OUTPUT:
         RETVAL
 
+# Fetch magic and return the class name of an object reference, or undef when
+# the value is not an object.
 char *
 blessed(sv)
     SV * sv
@@ -466,6 +492,7 @@ OUTPUT:
     RETVAL
 
 
+# Return the referent address of a reference, or zero for a nonreference.
 UV
 refaddr(sv)
     SV * sv
@@ -482,6 +509,7 @@ OUTPUT:
     RETVAL
 
 
+# Turn the supplied reference into a weak reference in place.
 void
 weaken(sv)
 	SV *sv
@@ -494,6 +522,7 @@ CODE:
 	croak("weak references are not implemented in this release of perl");
 #endif
 
+# Report whether the supplied scalar currently holds a weak reference.
 void
 isweak(sv)
 	SV *sv
@@ -507,6 +536,8 @@ CODE:
 #endif
 
 
+# Count weak references pointing at the supplied scalar itself, without
+# dereferencing it.
 IV
 weak_refcount(sv)
     SV * sv
@@ -519,6 +550,8 @@ CODE:
 OUTPUT:
     RETVAL
 
+# Return the supplied scalar's strong reference count plus its weak-reference
+# count.
 IV
 sv_refcount(sv)
     SV * sv
@@ -531,6 +564,8 @@ CODE:
 OUTPUT:
     RETVAL
 
+# Return a reference's referent count including weak edges, or zero for a
+# nonreference.
 IV
 refcount(sv)
     SV * sv
@@ -549,6 +584,8 @@ OUTPUT:
     RETVAL
 
 
+# Report whether a scalar already has a numeric value flag without coercing
+# its string value.
 bool
 is_numeric(sv)
     SV * sv
@@ -561,6 +598,8 @@ OUTPUT:
     RETVAL
 
 
+# Set the supplied scalar's readonly flag and return the flag operation's
+# result.
 int
 _make_ro(sv)
 	SV *sv
@@ -571,6 +610,8 @@ OUTPUT:
   RETVAL
 
 
+# Mark the supplied scalar readonly and return that same retained SV for use
+# in generated expressions.
 SV *
 make_ro(sv)
 	SV *sv
@@ -585,6 +626,8 @@ OUTPUT:
 
 
 
+# Set or clear the supplied scalar's readonly flag according to the second
+# argument.
 int
 readonly_set(sv,set)
 	SV *sv
@@ -599,6 +642,7 @@ CODE:
 OUTPUT:
   RETVAL
 
+# Return the supplied scalar's readonly flag without changing it.
 int
 readonly(sv)
 	SV *sv
@@ -608,6 +652,7 @@ CODE:
 OUTPUT:
   RETVAL
 
+# Expose Perl's numeric-string recognition for the supplied scalar.
 int
 looks_like_number(sv)
 	SV *sv
@@ -620,6 +665,8 @@ OUTPUT:
 
 
 
+# Replace matching slots in the current lexical pad with the source referent,
+# retaining it and requiring compatible destination/source types.
 int
 alias_ref (dst,src)
 	SV *dst
@@ -657,6 +704,8 @@ alias_ref (dst,src)
   OUTPUT:
     RETVAL
 
+# Fetch magic and return the underlying referent type without its blessing, or
+# false for a nonreference.
 char *
 reftype(sv)
     SV * sv
@@ -674,6 +723,8 @@ CODE:
 OUTPUT:
     RETVAL
 
+# Fetch magic and return a directly supplied glob's string name, or false for
+# a reference or another scalar type.
 char *
 _globname(sv)
     SV * sv
@@ -698,6 +749,8 @@ CODE:
 OUTPUT:
     RETVAL
 
+# Return an unblessed reference type or a quoted glob expression for a
+# directly supplied glob; return false for other values.
 SV *
 reftype_or_glob(sv)
     SV * sv
@@ -756,6 +809,8 @@ OUTPUT:
     RETVAL
 
 
+# Return a referent address or a quoted glob expression for a directly
+# supplied glob; return false for other values.
 SV *
 refaddr_or_glob(sv)
     SV * sv
@@ -815,6 +870,8 @@ OUTPUT:
     RETVAL
 
 
+# Build a Perl glob expression for a directly supplied glob, shortening main-
+# package names and escaping quoted names.
 SV *
 globname(sv)
     SV * sv
@@ -873,6 +930,8 @@ OUTPUT:
 
 #ifdef MY_XS_AMAGIC
 
+# Clear overload dispatch on the supplied SV for legacy interpreter
+# compatibility.
 void
 SvAMAGIC_off(sv)
     SV * sv
@@ -880,6 +939,8 @@ PROTOTYPE: $
 CODE:
     SvAMAGIC_off(sv);
 
+# Provide the legacy overload compatibility entry point; the retained
+# implementation clears the overload flag.
 void
 SvAMAGIC_on(sv,klass)
     SV * sv
@@ -893,6 +954,8 @@ CODE:
 
 #ifndef NEW_REGEX_ENGINE
 
+# Inspect a legacy regexp, returning pattern and modifiers in list context or
+# its stringified form in scalar context; return undef otherwise.
 void
 regex(sv)
     SV * sv
@@ -1058,6 +1121,8 @@ PPCODE:
 
 #ifdef MY_CAN_FIND_PLACEHOLDERS
 
+# Replace two caller-provided arrays with the hash's visible and placeholder
+# keys, advancing its hash iterator.
 void
 all_keys(hash,keys,placeholder)
 	SV* hash
@@ -1099,6 +1164,8 @@ all_keys(hash,keys,placeholder)
 
 
 
+# Return restricted-hash placeholder keys as a list, advancing the hash
+# iterator.
 void
 hidden_keys(hash)
 	SV* hash
@@ -1120,6 +1187,8 @@ hidden_keys(hash)
             }
         }
 
+# Return all legal restricted-hash keys, including placeholders, advancing the
+# hash iterator.
 void
 legal_keys(hash)
 	SV* hash

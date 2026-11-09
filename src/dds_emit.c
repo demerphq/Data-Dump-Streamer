@@ -40,6 +40,16 @@ struct dds_frame {
     IV last_n;
 };
 
+/*
+ * Traversal continuations
+ *
+ * Each heap frame owns only the values needed across a child visit. Its stage
+ * selects where execution resumes when that child completes.
+ */
+
+/* Push a heap continuation for one traversal step, borrowing graph data and
+ * retaining its name and any fetched temporary.
+ */
 static void dds_push_frame(pTHX_ dds_ctx *ctx, dds_frame_kind kind, SV *sv, UV depth,
                            dds_mark *mark, SV *name, IV indent, bool is_ref)
 {
@@ -75,6 +85,9 @@ static void dds_push_frame(pTHX_ dds_ctx *ctx, dds_frame_kind kind, SV *sv, UV d
     ctx->active = &frame->active;
 }
 
+/* Release and clear the SV references owned by a frame without releasing its
+ * borrowed graph values or catalogue records.
+ */
 static void dds_release_frame(pTHX_ struct dds_frame *frame)
 {
     /* Only these fields own SV references. Graph values remain borrowed
@@ -96,6 +109,9 @@ static void dds_release_frame(pTHX_ struct dds_frame *frame)
 #undef RELEASE
 }
 
+/* Destroy active and reusable continuation frames, including any owned values
+ * left by an interrupted traversal.
+ */
 void dds_clear_frames(pTHX_ dds_ctx *ctx)
 {
     struct dds_frame *frame;
@@ -112,6 +128,7 @@ void dds_clear_frames(pTHX_ dds_ctx *ctx)
     }
 }
 
+/* Build a mortal string from a C prefix, an optional SV value and a C suffix. */
 static SV *dds_concat(pTHX_ const char *prefix, SV *value, const char *suffix)
 {
     SV *out = DDS_TEMP(newSVpv(prefix, 0));
@@ -122,6 +139,15 @@ static SV *dds_concat(pTHX_ const char *prefix, SV *value, const char *suffix)
     return out;
 }
 
+/*
+ * Deferred graph construction
+ *
+ * Completion marks describe available destinations. Typed fixups wait for
+ * those marks before assigning aliases, restoring class fields or running
+ * thaws.
+ */
+
+/* Allocate a not-yet-ready completion mark owned by the current emission. */
 dds_mark *dds_new_mark(pTHX_ dds_ctx *ctx)
 {
     dds_mark *mark;
@@ -132,6 +158,9 @@ dds_mark *dds_new_mark(pTHX_ dds_ctx *ctx)
     return mark;
 }
 
+/* Allocate a deferred action, copying its destination expression and borrowing
+ * its stable catalogue node.
+ */
 dds_fix *dds_new_fix(pTHX_ dds_fix_kind kind, SV *lhs, dds_node *node)
 {
     dds_fix *fix;
@@ -143,6 +172,9 @@ dds_fix *dds_new_fix(pTHX_ dds_fix_kind kind, SV *lhs, dds_node *node)
     return fix;
 }
 
+/* Queue a deferred action and count pending alias dependencies, placing
+ * variable introductions ahead of actions that may use them.
+ */
 void dds_add_fix(pTHX_ dds_ctx *ctx, dds_fix *fix)
 {
     /* Introduce named variables before fixups that may refer to them. */
@@ -164,6 +196,9 @@ void dds_add_fix(pTHX_ dds_ctx *ctx, dds_fix *fix)
         ctx->pending_aliases++;
 }
 
+/* Queue a generated helper call, recording its alias destination when class
+ * hydration needs dependency tracking.
+ */
 static void dds_call_fix(pTHX_ dds_ctx *ctx, const char *function, SV *args, dds_node *source,
                          SV *path)
 {
@@ -175,6 +210,9 @@ static void dds_call_fix(pTHX_ dds_ctx *ctx, const char *function, SV *args, dds
     dds_add_fix(aTHX_ ctx, fix);
 }
 
+/* Release a completed deferred action and every output value or glob reference
+ * it owns.
+ */
 static void dds_free_fix(pTHX_ dds_fix *fix)
 {
     SvREFCNT_dec(fix->lhs);
@@ -186,6 +224,9 @@ static void dds_free_fix(pTHX_ dds_fix *fix)
     Safefree(fix);
 }
 
+/* Build a mortal reference expression for a canonical name, adding a reference
+ * operator or blessing when required.
+ */
 static SV *dds_ref_expression(pTHX_ dds_ctx *ctx, SV *name, SV *class_name)
 {
     const char *p = DDS_PV(name);
@@ -208,6 +249,9 @@ static SV *dds_ref_expression(pTHX_ dds_ctx *ctx, SV *name, SV *class_name)
     return out;
 }
 
+/* Emit a deferred restricted-hash lock, including placeholder keys that must
+ * remain legal.
+ */
 static void dds_lock_fix_output(pTHX_ dds_ctx *ctx, dds_fix *fix)
 {
     SSize_t i;
@@ -228,6 +272,9 @@ static void dds_lock_fix_output(pTHX_ dds_ctx *ctx, dds_fix *fix)
         dds_put(aTHX_ ctx, " );\n");
 }
 
+/* Emit a deferred thaw as a method, function or arbitrary code block, making
+ * its referent available to dependent fixups.
+ */
 static void dds_thaw_output(pTHX_ dds_ctx *ctx, dds_fix *fix)
 {
     SV *name = fix->node->ref.name;
@@ -281,6 +328,9 @@ static bool dds_path_contains(pTHX_ SV *parent, SV *path)
            (len == plen || s[plen] == '-' || s[plen] == '{' || s[plen] == '[');
 }
 
+/* Check that no pending alias can replace a field snapshot slot or the object
+ * destination before class hydration.
+ */
 static bool dds_class_fields_ready(pTHX_ dds_ctx *ctx, dds_node *node)
 {
     dds_fix *fix;
@@ -298,6 +348,9 @@ static bool dds_class_fields_ready(pTHX_ dds_ctx *ctx, dds_node *node)
     return TRUE;
 }
 
+/* Emit XPerl field hydration using the reconstructed object as $self, then
+ * mark its class storage restored.
+ */
 static void dds_restore_class(pTHX_ dds_ctx *ctx, dds_node *node)
 {
     dds_write(aTHX_ ctx, node->class_fields_name);
@@ -311,6 +364,9 @@ static void dds_restore_class(pTHX_ dds_ctx *ctx, dds_node *node)
     node->class_restored = TRUE;
 }
 
+/* Emit ready deferred actions until no more progress is possible; final mode
+ * also permits blessing, thaws and class hydration.
+ */
 void dds_apply_fixes(pTHX_ dds_ctx *ctx, bool final)
 {
     bool glob_work, progress;
@@ -451,6 +507,9 @@ void dds_apply_fixes(pTHX_ dds_ctx *ctx, bool final)
     } while (glob_work || progress);
 }
 
+/* Emit an opening or closing container delimiter with the selected spacing,
+ * returning the indentation for its contents or parent.
+ */
 static IV dds_brace(pTHX_ dds_ctx *ctx, SV *name, char type, bool multiline, IV indent, UV children)
 {
     bool open = strchr("{[(", type) != NULL;
@@ -478,6 +537,9 @@ static IV dds_brace(pTHX_ dds_ctx *ctx, SV *name, char type, bool multiline, IV 
     return indent;
 }
 
+/* Decide whether repeating a scalar literal is safe for RLE, excluding
+ * references, magic, readonly values and known aliases.
+ */
 static bool dds_rle_eligible(pTHX_ dds_ctx *ctx, SV *sv)
 {
     dds_node *node;
@@ -489,6 +551,16 @@ static bool dds_rle_eligible(pTHX_ dds_ctx *ctx, SV *sv)
     return !node || !node->slot.present || node->slot.encounters == 1;
 }
 
+/*
+ * Container traversal
+ *
+ * Array and hash continuations emit one child at a time, retaining layout
+ * state and recording aliases after the child returns.
+ */
+
+/* Advance an array continuation through one child or completion, preserving
+ * layout, RLE state and deferred element aliases.
+ */
 static bool dds_step_array(pTHX_ dds_ctx *ctx, struct dds_frame *f)
 {
     AV *av = (AV *)f->sv;
@@ -627,6 +699,9 @@ static bool dds_step_array(pTHX_ dds_ctx *ctx, struct dds_frame *f)
     return TRUE;
 }
 
+/* Advance a hash continuation through one value or completion, preserving key
+ * order, alignment and deferred value aliases.
+ */
 static bool dds_step_hash(pTHX_ dds_ctx *ctx, struct dds_frame *f)
 {
     HV *hv = (HV *)f->sv;
@@ -760,11 +835,17 @@ static bool dds_step_hash(pTHX_ dds_ctx *ctx, struct dds_frame *f)
     return TRUE;
 }
 
+/* Test whether an object reference has active overload behavior that requires
+ * deferred blessing.
+ */
 static bool dds_overloaded(pTHX_ SV *rv)
 {
     return SvROK(rv) && SvOBJECT(SvRV(rv)) && SvAMAGIC(rv) && Gv_AMG(SvSTASH(SvRV(rv)));
 }
 
+/* Check ignore policies and emit an ignored-object description when selected,
+ * returning whether the referent was handled.
+ */
 static bool dds_emit_ignored(pTHX_ dds_ctx *ctx, SV *rv, SV *target, bool forced)
 {
     HV *style = dds_hash(aTHX_ ctx->object, "style", FALSE);
@@ -795,6 +876,9 @@ static bool dds_emit_ignored(pTHX_ dds_ctx *ctx, SV *rv, SV *target, bool forced
     return ignored;
 }
 
+/* Emit a gensym expression and queue its enabled glob slots once, loading
+ * Symbol lazily in the generated code.
+ */
 static void dds_emit_symbol(pTHX_ dds_ctx *ctx, GV *gv, SV *name, UV depth, bool deref)
 {
     dds_node *node = dds_find(aTHX_ ctx, (SV *)gv, TRUE);
@@ -820,6 +904,16 @@ static void dds_emit_symbol(pTHX_ dds_ctx *ctx, GV *gv, SV *name, UV depth, bool
     }
 }
 
+/*
+ * Scalar slots
+ *
+ * Slot aliasing is independent of referent sharing. Resolve the slot first,
+ * then emit its literal or yield to reference construction.
+ */
+
+/* Advance a scalar-slot continuation, handling aliases, root assignments,
+ * literals and references before queuing readonly or weak fixups.
+ */
 static bool dds_step_sv(pTHX_ dds_ctx *ctx, struct dds_frame *f)
 {
     SV *sv = f->sv, *name = f->name;
@@ -1062,6 +1156,9 @@ child_done:
     return TRUE;
 }
 
+/* Queue one postdump hook per original frozen object, owning a reference to
+ * that original independently of any shared proxy.
+ */
 static void dds_queue_postdump(pTHX_ dds_ctx *ctx, dds_node *node, SV *original)
 {
     dds_postop *postop;
@@ -1084,6 +1181,9 @@ static void dds_queue_postdump(pTHX_ dds_ctx *ctx, dds_node *node, SV *original)
     postop->invocant = newRV_inc(original);
 }
 
+/* Run queued hooks for original objects after graph output and fixups finish,
+ * releasing each queued record before invoking Perl.
+ */
 static void dds_run_postdump(pTHX_ dds_ctx *ctx)
 {
     /* A noncanonical occurrence may precede its proxy's construction.
@@ -1115,6 +1215,17 @@ typedef struct {
     bool replacement;
 } dds_ref_value;
 
+/*
+ * Referent construction
+ *
+ * Resolve freezer proxies and select canonical metadata before deciding
+ * whether to reuse a value or construct it. New values pass through begin,
+ * payload and finish phases.
+ */
+
+/* Follow freezer replacements to an emit-ready value, queueing original-object
+ * hooks; return false when ignored or textual output already handled it.
+ */
 static bool dds_resolve_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f, dds_ref_value *value)
 {
     UV proxy_limit = 0;
@@ -1168,6 +1279,9 @@ static bool dds_resolve_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f, dds_ref_val
     return TRUE;
 }
 
+/* Choose persistent or frame-local referent metadata and its canonical
+ * expression, suppressing redundant blessing for ordinary regexps.
+ */
 static void dds_select_ref_role(pTHX_ dds_ctx *ctx, struct dds_frame *f, dds_ref_value *value)
 {
     SV *name = f->name;
@@ -1205,6 +1319,9 @@ static void dds_select_ref_role(pTHX_ dds_ctx *ctx, struct dds_frame *f, dds_ref
     }
 }
 
+/* Emit a use of an already known canonical referent, or a placeholder and
+ * deferred assignment; return false when this occurrence must construct it.
+ */
 static bool dds_emit_ref_use(pTHX_ dds_ctx *ctx, struct dds_frame *f, dds_ref_value *value)
 {
     SV *name = f->name, *target = value->target, *class_name = value->class_name;
@@ -1269,6 +1386,9 @@ static bool dds_emit_ref_use(pTHX_ dds_ctx *ctx, struct dds_frame *f, dds_ref_va
     return FALSE;
 }
 
+/* Begin a referent's construction wrappers and save blessing, locking and thaw
+ * state needed after its payload completes.
+ */
 static void dds_begin_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f, dds_ref_value *value)
 {
     SV *rv = value->rv, *target = value->target;
@@ -1339,6 +1459,9 @@ static void dds_begin_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f, dds_ref_value
     f->function_thaw = function_thaw;
 }
 
+/* Emit a referent payload or push a child continuation; return true when no
+ * child traversal remains pending.
+ */
 static bool dds_emit_ref_value(pTHX_ dds_ctx *ctx, struct dds_frame *f, dds_ref_value *value)
 {
     SV *rv = value->rv, *target = value->target;
@@ -1382,6 +1505,9 @@ static bool dds_emit_ref_value(pTHX_ dds_ctx *ctx, struct dds_frame *f, dds_ref_
     return TRUE;
 }
 
+/* Close construction wrappers and queue deferred blessing, locking or thaw
+ * actions after a referent payload completes.
+ */
 static void dds_finish_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f)
 {
     SV *class_name = f->class_name, *thaw = f->thaw;
@@ -1448,6 +1574,9 @@ static void dds_finish_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f)
     Zero(&f->result, 1, dds_result);
 }
 
+/* Coordinate reference resolution, canonical reuse, payload traversal and
+ * completion across initial and resumed frame stages.
+ */
 static bool dds_step_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f)
 {
     if (f->stage == DDS_STAGE_INITIAL) {
@@ -1471,6 +1600,17 @@ static bool dds_step_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f)
     return TRUE;
 }
 
+/*
+ * Emission driver and output
+ *
+ * The driver drains heap continuations for one value. The output coordinator
+ * constructs roots, resolves remaining dependencies and runs original-object
+ * postdump hooks.
+ */
+
+/* Drive heap continuations until one requested value is emitted, returning its
+ * alias or deferred-completion result to the caller.
+ */
 dds_result dds_emit_sv(pTHX_ dds_ctx *ctx, SV *sv, UV depth, dds_mark *mark, SV *name, IV indent,
                        bool is_ref)
 {
@@ -1520,6 +1660,9 @@ dds_result dds_emit_sv(pTHX_ dds_ctx *ctx, SV *sv, UV depth, dds_mark *mark, SV 
     return result;
 }
 
+/* Emit or defer enabled glob-slot assignments according to canonical names,
+ * fetching each live slot immediately before use.
+ */
 void dds_emit_glob(pTHX_ dds_ctx *ctx, GV *gv, SV *name, UV depth)
 {
     UV i, limit = ctx->style.deparse && ctx->style.deparseglob ? 4 : 3;
@@ -1607,6 +1750,9 @@ void dds_emit_glob(pTHX_ dds_ctx *ctx, GV *gv, SV *name, UV depth)
     }
 }
 
+/* Emit private named class-field snapshots and release fixups made ready by
+ * each snapshot assignment.
+ */
 static void dds_emit_class_fields(pTHX_ dds_ctx *ctx)
 {
     dds_node *node;
@@ -1625,6 +1771,9 @@ static void dds_emit_class_fields(pTHX_ dds_ctx *ctx)
     }
 }
 
+/* Prepare output context, construct roots and class snapshots, drain fixups in
+ * dependency order, then run postdump hooks and deliver void-context output.
+ */
 SV *dds_output(pTHX_ dds_ctx *ctx, I32 gimme)
 {
     UV i;

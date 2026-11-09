@@ -120,6 +120,8 @@ WriteMakefile(
     clean  => { FILES => join(' ', (map { "$_.c" } @native), 'lib/DDS.pm') },
 );
 
+# Add native source-copy rules and optional C/Perl formatting targets to the
+# platform-specific MakeMaker build.
 sub MY::postamble {
 
     # Build copies let MakeMaker use its platform-specific compiler rules.

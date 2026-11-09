@@ -3,6 +3,9 @@
 
 /* The public facade remains a blessed hash for API compatibility. All
  * configuration and ordinary entry points are native XSUBs. */
+/* Create a blessed facade hash with default style values and empty per-class
+ * policies.
+ */
 SV *dds_new_object(pTHX_ SV *class_name)
 {
     HV *object = newHV(), *style = newHV();
@@ -56,6 +59,9 @@ SV *dds_new_object(pTHX_ SV *class_name)
     return self;
 }
 
+/* Return an object invocant or call the class's constructor, respecting
+ * inherited and overridden constructors.
+ */
 SV *dds_safe_self(pTHX_ SV *self)
 {
     if (SvROK(self))
@@ -65,6 +71,9 @@ SV *dds_safe_self(pTHX_ SV *self)
     return dds_invoke(aTHX_ NULL, DDS_TEMP(newSVpvs("new")), TRUE, G_SCALAR, 1, &self);
 }
 
+/* Return an idle dumper unchanged, or clone its facade and retained roots so
+ * reentrant callbacks have independent traversal state.
+ */
 SV *dds_working_self(pTHX_ SV *self)
 {
     dds_ctx *ctx = dds_context(aTHX_ self), *working;
@@ -100,6 +109,9 @@ SV *dds_working_self(pTHX_ SV *self)
     return result;
 }
 
+/* Invalidate public catalogue status and clear freezer-policy caches before
+ * analyzing new input.
+ */
 static void dds_reset_facade(pTHX_ dds_ctx *ctx)
 {
     hv_delete(ctx->object, "cache_freeze_class", 18, G_DISCARD);
@@ -107,6 +119,16 @@ static void dds_reset_facade(pTHX_ dds_ctx *ctx)
     hv_stores(ctx->object, "cataloged", newSViv(0));
 }
 
+/*
+ * Guarded operations
+ *
+ * Capture and analysis share an operation guard with output. Entry points
+ * adapt that result to Perl calling context.
+ */
+
+/* Run capture, analysis or emission inside an exception-safe operation,
+ * returning the dumper, text or chunk array appropriate to the call.
+ */
 static SV *dds_run(pTHX_ SV *self, I32 argc, SV **args, I32 gimme, bool analyze_only)
 {
     dds_ctx *ctx = dds_context(aTHX_ self);
@@ -153,6 +175,9 @@ static SV *dds_run(pTHX_ SV *self, I32 argc, SV **args, I32 gimme, bool analyze_
     return result;
 }
 
+/* Replace captured roots under the operation guard, invalidating cached
+ * analysis without producing output.
+ */
 static void dds_capture_api(pTHX_ SV *self, I32 count, SV **args)
 {
     dds_ctx *ctx = dds_context(aTHX_ self);
@@ -167,6 +192,9 @@ static void dds_capture_api(pTHX_ SV *self, I32 count, SV **args)
     LEAVE;
 }
 
+/* Normalize and validate supplied root names, then store an owned name list on
+ * the facade.
+ */
 static void dds_set_names(pTHX_ HV *object, I32 count, SV **args)
 {
     AV *names = (AV *)DDS_TEMP((SV *)newAV());
@@ -228,6 +256,9 @@ static void dds_set_names(pTHX_ HV *object, I32 count, SV **args)
     hv_stores(object, "unames", newRV_inc((SV *)names));
 }
 
+/* Build a mortal policy key: an address key for a reference, or a Unicode-
+ * preserving class/default key for a string.
+ */
 static SV *dds_policy_key(pTHX_ SV *value)
 {
     SV *key;
@@ -241,6 +272,9 @@ static SV *dds_policy_key(pTHX_ SV *value)
     return key;
 }
 
+/* Read or update key-order policies, resolving built-in modes and class
+ * methods into values the native sorter can use.
+ */
 static SV *dds_key_order(pTHX_ SV *self, I32 count, SV **args)
 {
     HV *style = dds_hash(aTHX_ dds_context(aTHX_ self)->object, "style", TRUE);
@@ -298,6 +332,9 @@ static SV *dds_key_order(pTHX_ SV *self, I32 count, SV **args)
     return self;
 }
 
+/* Implement the public constructor, returning a newly initialized dumper for
+ * the requested class.
+ */
 static XS(dds_xs_new)
 {
     dXSARGS;
@@ -307,6 +344,9 @@ static XS(dds_xs_new)
     XSRETURN(1);
 }
 
+/* Normalize the invocant and, for the working-self variant, isolate a
+ * reentrant operation before returning it to Perl.
+ */
 static XS(dds_xs_safe_self)
 {
     dXSARGS;
@@ -321,6 +361,9 @@ static XS(dds_xs_safe_self)
     XSRETURN(1);
 }
 
+/* Implement Data and Out, forwarding arguments and Perl context and unpacking
+ * list-context output chunks.
+ */
 static XS(dds_xs_io)
 {
     dXSARGS;
@@ -347,6 +390,9 @@ static XS(dds_xs_io)
     XSRETURN(1);
 }
 
+/* Implement the capture-only entry points, replacing roots and returning the
+ * working dumper for chaining.
+ */
 static XS(dds_xs_capture)
 {
     dXSARGS;
@@ -367,6 +413,9 @@ typedef enum {
     DDS_DUMP_LEX
 } dds_dump_kind;
 
+/* Dispatch Dump, Dumper, DumpVars and DumpLex, handling invocants, naming,
+ * scalar capture and context-sensitive output.
+ */
 static XS(dds_xs_dump)
 {
     dXSARGS;
@@ -497,6 +546,16 @@ static const char *dds_option_keys[] = {
 #undef OPTION_KEY
 };
 
+/*
+ * Option dispatch
+ *
+ * The shared selector table connects accessor names to stored option keys.
+ * Complex options retain their specialized validation and context behavior.
+ */
+
+/* Implement option getters and setters, including context-sensitive list
+ * results and options with specialized validation or storage.
+ */
 static XS(dds_xs_option)
 {
     dXSARGS;
@@ -648,6 +707,9 @@ static XS(dds_xs_option)
     XSRETURN(1);
 }
 
+/* Provide the non-pure output placeholder by returning its first argument, or
+ * undef when none was supplied.
+ */
 static XS(dds_xs_alias_to)
 {
     dXSARGS;
@@ -655,6 +717,9 @@ static XS(dds_xs_alias_to)
     XSRETURN(1);
 }
 
+/* Exclude dumper objects from ithread cloning because their native traversal
+ * state belongs to one interpreter.
+ */
 static XS(dds_xs_clone_skip)
 {
     dXSARGS;
@@ -662,6 +727,9 @@ static XS(dds_xs_clone_skip)
     XSRETURN_YES;
 }
 
+/* Register public entry points, option accessors and spelling aliases with
+ * their native dispatch selectors.
+ */
 void dds_api_boot(pTHX)
 {
     static const struct {

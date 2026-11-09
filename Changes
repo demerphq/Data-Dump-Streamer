@@ -14,6 +14,8 @@ perltidy profiles. Expand inline C statements and loops, clarify dump
 entry-point selection, and document ownership and traversal invariants.
 Split array/hash analysis, queue-item processing and closure-root discovery
 into helpers so the main breadth-first pass shows its overall flow.
+Document each native function, XS utility and retained Perl facade helper,
+with an overview of graph processing and its major phases.
 Keep the reusable benchmark under maint/ and remove completed planning
 material.
 

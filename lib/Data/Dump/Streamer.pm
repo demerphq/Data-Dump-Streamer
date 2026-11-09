@@ -124,6 +124,8 @@ $DEBUG= 0;
 *DDumper= \&Data::Dumper::Dumper;
 *_get_lexicals= \&_xs_get_lexicals;
 
+# Export the requested API and optionally install a package alias selected by
+# the caller's "as" argument.
 sub import {
     my ($pkg)= @_;
     my ($idx, $alias);
@@ -141,12 +143,16 @@ sub import {
     $pkg->export_to_level(1, @_);
 }
 
+# Provide the decompressor import prelude or a compressed reconstruction
+# expression for one string.
 sub _compressor {
     return "use Data::Dump::Streamer qw(usqz);\n"
         if !@_;
     return sqz($_[0], "usqz('", "')");
 }
 
+# Compress and Base64-encode a string, optionally wrapping the encoded bytes
+# in caller-provided prefix and suffix text.
 sub sqz {
     require Compress::Zlib;
     require MIME::Base64;
@@ -156,16 +162,22 @@ sub sqz {
         : MIME::Base64::encode($res, "");
 }
 
+# Decode and decompress a string emitted by sqz; the compression modules must
+# already be loaded.
 sub usqz {
     return Compress::Zlib::uncompress(MIME::Base64::decode($_[0]));
 }
 
+# Return copied catalogue rows ordered by minimum depth and canonical name for
+# diagnostic display.
 sub _diag_rows {
     my ($self, $kind)= @_;
     return [ sort { $a->{depth} <=> $b->{depth} || $a->{name} cmp $b->{name} }
             @{ $self->_xs_catalogue->{$kind} } ];
 }
 
+# Format one catalogue row, including identity, counts, depth, flags and
+# completion status.
 sub _diag_row {
     my ($kind, $idx, $row, $prefix)= @_;
     return '' unless $row;
@@ -175,6 +187,8 @@ sub _diag_row {
         $row->{done}, $row->{name};
 }
 
+# Print scalar-slot and referent catalogue diagnostics to a handle and return
+# the dumper for chaining.
 sub diag {
     my $self= shift;
     my $handle= shift || \*STDOUT;
@@ -190,12 +204,16 @@ sub diag {
     return $self;
 }
 
+# Format the requested one-based scalar-slot diagnostic row with an optional
+# prefix.
 sub diag_sv_idx {
     my ($self, $idx, $prefix)= @_;
     return _diag_row('S', $idx, $self->_diag_rows('slots')->[ $idx - 1 ],
         $prefix);
 }
 
+# Format the requested one-based referent diagnostic row with an optional
+# prefix.
 sub diag_ref_idx {
     my ($self, $idx, $prefix)= @_;
     return _diag_row('R', $idx, $self->_diag_rows('references')->[ $idx - 1 ],
@@ -220,6 +238,8 @@ sub _xs_lexical_names {
     ];
 }
 
+# Deparse a code reference with catalogue-selected closure names and output
+# indentation, falling back to the configured stub on failure.
 sub _xs_code_text {
     my ($self, $item, $name, $indent, $class)= @_;
     unless ($self->{style}{deparse}) {
@@ -275,6 +295,8 @@ sub _xs_code_text {
     return;
 }
 
+# Produce an expression reconstructing a format reference, or the configured
+# format stub when deparsing is disabled or unavailable.
 sub _xs_format_text {
 
     # from link from [ysth]: http://groups.google.com/groups?selm=laUs8gzkgOlT092yn%40efn.org
@@ -316,6 +338,8 @@ sub _xs_format_text {
 
 }
 
+# Deparse a glob's FORMAT slot into a named format declaration, returning an
+# empty string when no format is available.
 sub _xs_glob_format_text {
     my ($self, $item, $name)= @_;
     my $obj= B::svref_2object($item);
@@ -328,6 +352,8 @@ sub _xs_glob_format_text {
         . $deparser->indent($deparser->deparse_format($obj)) . "\n";
 }
 
+# Apply the configured eclipse-name template while preserving the captured
+# variable's sigil.
 sub _xs_eclipse_name {
     my ($name, $format, $n)= @_;
     return sprintf "%s" . $format, substr($name, 0, 1),
@@ -347,12 +373,16 @@ if ($VERSION ne $Data::Dump::Streamer::VERSION) {
         "Incompatible Data::Dump::Streamer::Deparser v$VERSION vs Data::Dump::Streamer v$Data::Dump::Streamer::VERSION";
 }
 
+# Associate pad offsets with catalogue-selected lexical names for this
+# deparser instance.
 sub dds_usenames {
     my $self= shift;
     my $names= shift;
     $cache{ Data::Dump::Streamer::refaddr $self}= $names;
 }
 
+# Return an explicitly assigned closure name, falling back to B::Deparse's
+# pad-name lookup.
 sub padname {
     my $self= shift;
     my $targ= shift;
@@ -364,6 +394,8 @@ sub padname {
     return $self->padname_sv($targ)->PVX;
 }
 
+# Remove this deparser's name overrides from the external cache when the
+# instance is destroyed.
 sub DESTROY {
     my $self= shift;
     delete $cache{ Data::Dump::Streamer::refaddr $self};
