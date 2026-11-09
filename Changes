@@ -72,6 +72,8 @@ and delimiter escaping. Preserve distinct dualvar numeric values during
 array run-length encoding, and defer weakening until graph fixups finish.
 Preserve literal Unicode pattern whitespace in extended regexps instead
 of turning ignored characters into required hex escapes.
+Retain UTF-8 encoding when copying escaped wide regexp characters into
+generated source, so reconstruction does not reinterpret individual bytes.
 
 Apply the preferred source formatting and fix serialization of the global
 stash. Add a regression test for dumping the global stash.

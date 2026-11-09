@@ -120,6 +120,32 @@ for my $source ("a # a comment\nb", "a\tb", "a\rb", "a\0b", "\x{100}/\x{263a}")
 }
 
 {
+    # Keep this test free of a caller-side use utf8, which would mask an
+    # unflagged source string containing raw UTF-8 bytes.
+    for my $codepoint (0x263a, 0x1f642) {
+        my $character= chr($codepoint);
+        my $source= 'a\\' . $character . 'b';
+        my $original= qr/$source/;
+        my $label= sprintf 'escaped U+%04X', $codepoint;
+        ok("a${character}b" =~ $original, "$label: original matches");
+
+        my $text= Dump($original)->Terse(1)->Out;
+        my $copy= eval $text;
+        is($@, '', "$label: output evaluates") or diag $text;
+        isa_ok($copy, 'Regexp', "$label: restored pattern");
+        next unless ref($copy) eq 'Regexp';
+
+        for my $subject ("a${character}b", 'ab', $source) {
+            is(
+                !!($subject =~ $copy),
+                !!($subject =~ $original),
+                "$label: literal Unicode matching survives"
+            );
+        }
+    }
+}
+
+{
     my $original= qr/a.b/im;
     my ($pattern, $modifiers)= regex($original);
     is($pattern, 'a.b', 'compatibility API returns the source pattern');

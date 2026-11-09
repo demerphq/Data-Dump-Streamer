@@ -157,8 +157,8 @@ SV *dds_quote(pTHX_ SV *value, bool key)
     return DDS_TEMP(out);
 }
 
-/* Return a mortal byte slice of a name while retaining its UTF-8 flag. */
-static SV *dds_name_slice(pTHX_ SV *name, STRLEN start, STRLEN length)
+/* Return a mortal byte slice while retaining the input string's UTF-8 flag. */
+static SV *dds_string_slice(pTHX_ SV *name, STRLEN start, STRLEN length)
 {
     STRLEN len;
     const char *p = SvPV(name, len);
@@ -201,7 +201,7 @@ SV *dds_underef(pTHX_ SV *name)
 
     if (len > 1 && strchr("@%$", p[0])) {
         if (p[1] == '$')
-            return dds_name_slice(aTHX_ name, 1, len - 1);
+            return dds_string_slice(aTHX_ name, 1, len - 1);
         if (p[1] == '{' && p[len - 1] == '}') {
             STRLEN i;
             IV depth = 0;
@@ -221,7 +221,7 @@ SV *dds_underef(pTHX_ SV *name)
                     depth++;
                 else if (c == '}' && --depth == 0) {
                     if (i == len - 1)
-                        return dds_name_slice(aTHX_ name, 2, len - 3);
+                        return dds_string_slice(aTHX_ name, 2, len - 3);
                     break;
                 }
             }
@@ -262,7 +262,7 @@ SV *dds_child_name(pTHX_ SV *parent, char kind, SV *key, IV child_index)
             if (len > 3 && p[0] == '$' && p[1] == '$' && p[len - 1] == '>') {
                 SV *tmp = DDS_TEMP(newSVpvs("${"));
 
-                DDS_CAT(tmp, dds_name_slice(aTHX_ out, 1, len - 3));
+                DDS_CAT(tmp, dds_string_slice(aTHX_ out, 1, len - 3));
                 sv_catpvs(tmp, "}->");
                 sv_setsv(out, tmp);
             }
@@ -305,9 +305,9 @@ SV *dds_clean_name(pTHX_ SV *name)
         return DDS_TEMP(newSVsv(name));
 
     out = DDS_TEMP(newSVpvs("$"));
-    DDS_CAT(out, dds_name_slice(aTHX_ name, 1, i - 1));
+    DDS_CAT(out, dds_string_slice(aTHX_ name, 1, i - 1));
     sv_catpvs(out, "_");
-    DDS_CAT(out, dds_name_slice(aTHX_ name, i, len - i));
+    DDS_CAT(out, dds_string_slice(aTHX_ name, i, len - i));
     return out;
 }
 
@@ -828,7 +828,12 @@ SV *dds_regex(pTHX_ dds_ctx *ctx, SV *rv)
             if (SvUTF8(pattern))
                 (void)utf8_to_uvchr_buf(p + i + 1, p + len, &next_width);
 
-            sv_catpvn(out, (const char *)p + i, 1 + next_width);
+            /* Raw UTF-8 bytes need an SV carrying their encoding so the
+             * output and its enclosing source string are upgraded too. */
+            if (next_width > 1)
+                DDS_CAT(out, dds_string_slice(aTHX_ pattern, i, 1 + next_width));
+            else
+                sv_catpvn(out, (const char *)p + i, 1 + next_width);
             width = 1 + next_width;
         } else if (ch == '@' || (ch == '$' && i + 1 < len && !strchr("()| \t\r\n", p[i + 1]))) {
             STRLEN end = i + width;
