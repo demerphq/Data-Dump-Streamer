@@ -1,3 +1,5 @@
+.clang-format
+.perltidyrc
 .gitignore
 .patch
 Makefile.PL
@@ -56,3 +58,5 @@ src/dds_engine.c
 src/dds_engine.h
 src/dds_format.c
 t/xperl_class.t
+maint/tidy-perl.pl
+maint/memory-benchmark.pl

@@ -3,18 +3,19 @@ use 5.018;
 use strict;
 use warnings;
 use warnings::register;
-use B ();
-use B::Deparse ();
+use B            ();
+use B::Deparse   ();
 use Data::Dumper ();
-use DynaLoader ();
-use Exporter ();
-use IO::Handle ();
-use Symbol ();
-use Hash::Util qw(lock_keys lock_ref_keys lock_keys_plus lock_ref_keys_plus);
-use re ();
+use DynaLoader   ();
+use Exporter     ();
+use IO::Handle   ();
+use Symbol       ();
+use Hash::Util   qw(lock_keys lock_ref_keys lock_keys_plus lock_ref_keys_plus);
+use re           ();
 
 our ($VERSION, $XS_VERSION, $HasPadWalker, $DEBUG);
 our (@ISA, @EXPORT, @EXPORT_OK, @EXPORT_FAIL, %EXPORT_TAGS);
+
 BEGIN {
     $VERSION= $XS_VERSION= '2.42';
     @ISA= qw(Exporter DynaLoader);
@@ -102,18 +103,20 @@ BEGIN {
 
     Data::Dump::Streamer->bootstrap($XS_VERSION);
     if ($] >= 5.013006 && $] < 5.013010) {
+
         # These development releases exposed flags that were not yet legal
         # in regexp literals. Preserve the original compatibility rule.
-        *regex = sub {
+        *regex= sub {
             return scalar re::regexp_pattern($_[0]) unless wantarray;
-            my ($pattern, $modifiers) = re::regexp_pattern($_[0]);
+            my ($pattern, $modifiers)= re::regexp_pattern($_[0]);
             $modifiers =~ tr/dlua?//d if defined $modifiers;
             return ($pattern, $modifiers);
         };
     }
     elsif ($] >= 5.009004) {
-        *regex = \&re::regexp_pattern;
+        *regex= \&re::regexp_pattern;
     }
+
     # Older interpreters use the regex XSUB installed by bootstrap above.
     $HasPadWalker= eval { require PadWalker; PadWalker->VERSION('0.99'); 1 };
 }
@@ -138,13 +141,11 @@ sub import {
     $pkg->export_to_level(1, @_);
 }
 
-
 sub _compressor {
     return "use Data::Dump::Streamer qw(usqz);\n"
         if !@_;
     return sqz($_[0], "usqz('", "')");
 }
-
 
 sub sqz {
     require Compress::Zlib;
@@ -155,18 +156,15 @@ sub sqz {
         : MIME::Base64::encode($res, "");
 }
 
-
 sub usqz {
     return Compress::Zlib::uncompress(MIME::Base64::decode($_[0]));
 }
 
-
 sub _diag_rows {
     my ($self, $kind)= @_;
-    return [sort { $a->{depth} <=> $b->{depth} || $a->{name} cmp $b->{name} }
-        @{ $self->_xs_catalogue->{$kind} }];
+    return [ sort { $a->{depth} <=> $b->{depth} || $a->{name} cmp $b->{name} }
+            @{ $self->_xs_catalogue->{$kind} } ];
 }
-
 
 sub _diag_row {
     my ($kind, $idx, $row, $prefix)= @_;
@@ -177,7 +175,6 @@ sub _diag_row {
         $row->{done}, $row->{name};
 }
 
-
 sub diag {
     my $self= shift;
     my $handle= shift || \*STDOUT;
@@ -185,25 +182,25 @@ sub diag {
     for my $kind (qw(slots references)) {
         my $rows= $self->_diag_rows($kind);
         for my $idx (0 .. $#$rows) {
-            print $handle _diag_row(substr(uc($kind), 0, 1), $idx + 1, $rows->[$idx]);
+            print $handle _diag_row(substr(uc($kind), 0, 1), $idx + 1,
+                $rows->[$idx]);
         }
     }
     print $handle "+---+\n";
     return $self;
 }
 
-
 sub diag_sv_idx {
     my ($self, $idx, $prefix)= @_;
-    return _diag_row('S', $idx, $self->_diag_rows('slots')->[$idx - 1], $prefix);
+    return _diag_row('S', $idx, $self->_diag_rows('slots')->[ $idx - 1 ],
+        $prefix);
 }
-
 
 sub diag_ref_idx {
     my ($self, $idx, $prefix)= @_;
-    return _diag_row('R', $idx, $self->_diag_rows('references')->[$idx - 1], $prefix);
+    return _diag_row('R', $idx, $self->_diag_rows('references')->[ $idx - 1 ],
+        $prefix);
 }
-
 
 # PadWalker supplies names; the native DumpLex entry point handles capture,
 # contexts, and dumping. XS frames do not add a Perl caller level here.
@@ -214,7 +211,13 @@ sub _xs_lexical_names {
             $pad_vars{ refaddr($ref) } ||= $var;
         }
     }
-    return [map { $pad_vars{refaddr(\$_)} || (ref($_) && $pad_vars{refaddr($_)}) || undef } @_];
+    return [
+        map {
+                   $pad_vars{ refaddr(\$_) }
+                || (ref($_) && $pad_vars{ refaddr($_) })
+                || undef
+        } @_
+    ];
 }
 
 sub _xs_code_text {
@@ -252,7 +255,8 @@ sub _xs_code_text {
             $code= $deparser->indent($deparser->deparse_sub($cv));
         };
         if ($@) {
-            warnings::warnif "Using CODE stub for $name as B::Deparse failed: $@";
+            warnings::warnif
+                "Using CODE stub for $name as B::Deparse failed: $@";
             return $self->{style}{codestub};
         }
 
@@ -270,7 +274,6 @@ sub _xs_code_text {
     }
     return;
 }
-
 
 sub _xs_format_text {
 
@@ -313,7 +316,6 @@ sub _xs_format_text {
 
 }
 
-
 sub _xs_glob_format_text {
     my ($self, $item, $name)= @_;
     my $obj= B::svref_2object($item);
@@ -321,10 +323,10 @@ sub _xs_glob_format_text {
     return '' unless ref($obj) eq 'B::FM';
     $name =~ s/^\*(::)?//;
     my $deparser= Data::Dump::Streamer::Deparser->new;
-    return "format $name =\n" .
-        $deparser->indent($deparser->deparse_format($obj)) . "\n";
+    return
+        "format $name =\n"
+        . $deparser->indent($deparser->deparse_format($obj)) . "\n";
 }
-
 
 sub _xs_eclipse_name {
     my ($name, $format, $n)= @_;
@@ -333,7 +335,6 @@ sub _xs_eclipse_name {
         ? (substr($name, 1), $n)
         : ($n, substr($name, 1));
 }
-
 
 package Data::Dump::Streamer::Deparser;
 use B::Deparse;

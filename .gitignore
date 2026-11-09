@@ -23,3 +23,5 @@ Data-Dump-Streamer-*/
 /dds_*.o
 /pm_to_blib
 *.tar
+
+.perltidy-*

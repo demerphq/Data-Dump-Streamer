@@ -9,6 +9,12 @@ Split reference emission into focused resolution, construction and
 completion helpers. Use heap frames for deep graphs and protect borrowed
 values when user callbacks can run.
 
+Add make tidy, tidy-c and tidy-perl using shared clang-format and
+perltidy profiles. Expand inline C statements and loops, clarify dump
+entry-point selection, and document ownership and traversal invariants.
+Keep the reusable benchmark under maint/ and remove completed planning
+material.
+
 Use ExtUtils::MakeMaker for configuration, compilation, testing and
 installation. Preserve DDS/NODDS alias selection and native header
 dependencies. Keep the DDS shortcut documentation and a version assignment

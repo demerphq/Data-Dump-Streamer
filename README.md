@@ -32,6 +32,20 @@ Optional dependencies:
 CI tests every stable Perl series from 5.18 through 5.44, plus a development
 Perl built with the refcounted stack and a separate threaded build.
 
+## DEVELOPMENT
+
+Run `make tidy` to format the maintained C and Perl sources. The target
+uses `.clang-format` and `.perltidyrc`; the Perl profile preserves the
+previous tidyall.sh preferences. Install clang-format 18 or newer and
+Perl::Tidy separately. These are optional developer tools.
+
+Use `make tidy-c` or `make tidy-perl` for one language. Tool commands
+can be overridden, for example `make tidy CLANG_FORMAT=clang-format-18`.
+Generated files and Streamer.xs are excluded from automatic formatting.
+
+Run `perl -Mblib maint/memory-benchmark.pl wide 100000` for the large-graph
+benchmark, or use `deep 1000 1` to include key-sorting callbacks.
+
 ## AUTHOR AND COPYRIGHT
     Yves Orton, (demerphq)
 
