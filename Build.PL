@@ -1,6 +1,6 @@
 #!perl
 
-use 5.006_000;
+use 5.022;
 BEGIN {
     push @INC, 'inc';
 }
@@ -10,14 +10,12 @@ my $build = My::Builder->new(
     module_name => 'Data::Dump::Streamer',
     dist_author => 'Yves Orton <yves@cpan.org>',
     license => 'perl',
+    c_source => 'src',
     configure_requires => {
-        'perl' => '5.006',
+        'perl' => '5.022',
 
-        # Core 5.009_004+
         'Module::Build'     => 0,
 
-        # CPAN
-        'ExtUtils::Depends' => 0,
     },
     build_requires => {
         # Core modules
@@ -27,44 +25,33 @@ my $build = My::Builder->new(
         'Data::Dumper'       => 0,
         'Devel::Peek'        => 0,
         'ExtUtils::CBuilder' => 0,
+        'Scalar::Util'      => 0,
         'Symbol'             => 0,
         'Test::More'         => 0,
-        'Text::Abbrev'       => 0,
         'base'               => 0,
         'overload'           => 0,
         'strict'             => 0,
         'utf8'               => 0,
         'vars'               => 0,
         'warnings'           => 0,
-        $] >= 5.012
-            ? ( 're' => 0 )
-            : (),
+        're'                 => 0,
     },
     requires => {
+        'perl'           => '5.022',
         'B'              => 0,
         'B::Deparse'     => 0,
-        'B::Utils'       => 0,
         'Data::Dumper'   => 0,
         'DynaLoader'     => 0,
         'Exporter'       => 0,
-        'IO::File'       => 0,
+        'IO::Handle'     => 0,
         'Symbol'         => 0,
-        'Text::Abbrev'   => 0,
-        'Text::Balanced' => 0,
-        'overload'       => 0,
         'strict'         => 0,
         'vars'           => 0,
         'warnings'       => 0,
         'warnings::register' => 0,
-        $] >= 5.009_004
-            ? ( 're' => 0 )
-            : (),
-        $] >= 5.008
-            ? ( 'Hash::Util' => 0 )
-            : (),
+        're'             => 0,
+        'Hash::Util'     => 0,
 
-        # CPAN
-        'B::Utils' => 0,
     },
     recommends => {
         # Core 5.007_003+

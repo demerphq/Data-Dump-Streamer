@@ -6,25 +6,17 @@ use warnings;
 use Module::Build;
 our @ISA= 'Module::Build';
 
+sub compile_c {
+    my ($self, $file, @args)= @_;
+    my $object= $self->cbuilder->object_file($file);
+    if (-e $object && !$self->up_to_date([$file, glob('src/*.h')], $object)) {
+        unlink($object) or die "Cannot rebuild $object: $!";
+    }
+    return $self->SUPER::compile_c($file, @args);
+}
+
 sub new {
     my $class= shift @_;
-
-    {
-        my $B_Utils_required= 0.05;
-        eval { require B::Utils; };
-        if ($@ or B::Utils->VERSION < $B_Utils_required) {
-
-            # If I don't have B::Utils then I must have ExtUtils::Depends
-            my $ExtUtils_Depends_required=
-                0.302;    #minimum version that works on Win32+gcc
-            eval { require ExtUtils::Depends; };
-            if ($@ or ExtUtils::Depends->VERSION < $ExtUtils_Depends_required) {
-                print
-                    "ExtUtils::Depends $ExtUtils_Depends_required is required to configure our B::Utils dependency, please install it manually or upgrade your CPAN/CPANPLUS\n";
-                exit(0);
-            }
-        }
-    }
 
     # Handle both: `./Build.PL DDS' and `./Build.PL NODDS'
     #

@@ -8,26 +8,24 @@
       ./Build install
 ```
 
-    The modules requires a functional C compiler, however PPM support
-    for Win32 users will also be available sometime soon.
-
-    It is known to work correctly on Perl 5.6 and later on both Win32
-    and *nix operating systems. Not all 5.8.x features are available
-    in 5.8.0
+Perl 5.22 or later and a functional C compiler are required. Graph
+analysis and Perl source emission use a mandatory XS engine. Construction, options, entry points, and callback dispatch also use XS.
+Perl supplies loading/export glue and integration with B::Deparse,
+PadWalker, and the optional compression modules.
 
 ## DEPENDENCIES
-    This module requires these other modules and libraries:
 
-     * Module::Build
-     * ExtUtils::Depends
-     * B::Utils
+Module::Build is required to configure and build the distribution. Runtime
+dependencies are included with supported Perl versions.
 
-    and optionally for enhanced testing
+Optional dependencies:
 
-      Algortihm::Diff and later versions of Data::Dumper
+- PadWalker enables automatic variable names in DumpLex.
+- Algorithm::Diff and Cpanel::JSON::XS enable additional test coverage.
+- Compress::Zlib and MIME::Base64 enable compressed scalar output.
 
-    All other dependencies are part of the standard distribution as
-    of Perl 5.6.
+CI tests every stable Perl series from 5.22 through 5.44, plus a development
+Perl built with the refcounted stack and a separate threaded build.
 
 ## AUTHOR AND COPYRIGHT
     Yves Orton, (demerphq)

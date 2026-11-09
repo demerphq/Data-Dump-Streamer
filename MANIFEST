@@ -7,7 +7,6 @@ INSTALL.SKIP
 lib/Data/Dump/ppport.h
 lib/Data/Dump/Streamer.pm
 lib/Data/Dump/Streamer.xs
-lib/Data/Dump/Streamer/_/Printers.pm
 MANIFEST			This list of files
 MANIFEST.SKIP
 META.json
@@ -15,10 +14,14 @@ META.yml
 README.md
 t/as.t
 t/blessed.t
+t/catalogue_lifetimes.t
 t/dogpound.t
 t/dump.t
 t/filter.t
+t/freezer_semantics.t
 t/globtest.t
+t/glob_roundtrip.t
+t/glob_sharing.t
 t/hardrefs.t
 t/impure_madness.t
 t/lexicals.t
@@ -28,10 +31,12 @@ t/madness_json.t
 t/madness_w.t
 t/names.t
 t/overload.t
+t/output_handles.t
 t/readonly.t
 t/refaddr.t
 t/refcount.t
 t/refelem.t
+t/regexp_roundtrip.t
 t/reftype.t
 t/sortkeys.t
 t/stash.t
@@ -39,5 +44,15 @@ t/terse.t
 t/test_helper.pl
 t/tree.t
 t/usage.t
+t/utf8_roundtrip.t
 t/xs_subs.t
+t/xs_engine.t
+t/xs_api.t
+t/xs_graphs.t
 typemap
+src/dds_analyze.c
+src/dds_api.c
+src/dds_emit.c
+src/dds_engine.c
+src/dds_engine.h
+src/dds_format.c

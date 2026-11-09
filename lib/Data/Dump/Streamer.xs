@@ -24,6 +24,7 @@
  *
  */
 
+#define PERL_NO_GET_CONTEXT
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -31,6 +32,7 @@ extern "C" {
 #include "perl.h"
 #include "XSUB.h"
 #include "ppport.h"
+#include "dds_engine.h"
 #ifdef __cplusplus
 }
 #endif
@@ -68,20 +70,7 @@ extern "C" {
 #       define PERL_MAGIC_backref	  '<'
 #   endif
 
-#define ADD_WEAK_REFCOUNT do {                          \
-        MAGIC *mg = NULL;                               \
-        if( SvMAGICAL(sv)                               \
-            && (mg = mg_find(sv, PERL_MAGIC_backref) )  \
-        ){                                              \
-            SV **svp = (SV**)mg->mg_obj;                \
-            if (svp && *svp) {                          \
-                RETVAL +=                               \
-                    SvTYPE(*svp) == SVt_PVAV            \
-                    ? av_len((AV*)*svp)+1               \
-                    : 1;                                \
-            }                                           \
-        }                                               \
-    } while (0)
+#define ADD_WEAK_REFCOUNT RETVAL += dds_weak_count(aTHX_ sv)
 #else
 #define ADD_WEAK_REFCOUNT
 #endif
@@ -244,6 +233,96 @@ object_2svref(sv)
 
 MODULE = Data::Dump::Streamer		PACKAGE = Data::Dump::Streamer
 
+SV *
+_xs_stats(self)
+    SV *self
+CODE:
+    {
+        dds_ctx *ctx = dds_context(aTHX_ self);
+        HV *stats = newHV();
+        hv_stores(stats, "visits", newSVuv(ctx->visits));
+        hv_stores(stats, "lookups", newSVuv(ctx->lookups));
+        hv_stores(stats, "candidates", newSVuv(ctx->candidates));
+        hv_stores(stats, "repeats", newSVuv(ctx->repeats));
+        hv_stores(stats, "queue_peak", newSVuv(ctx->queue_peak));
+        hv_stores(stats, "keepalive", newSViv(av_len(ctx->keepalive) + 1));
+        hv_stores(stats, "fixes", newSVuv(ctx->fixes));
+        RETVAL = newRV_noinc((SV *)stats);
+    }
+OUTPUT:
+    RETVAL
+
+SV *
+_xs_catalogue(self)
+    SV *self
+CODE:
+    {
+        dds_ctx *ctx = dds_context(aTHX_ self);
+        HV *view = newHV();
+        AV *slots = newAV(), *references = newAV();
+        UV i;
+        hv_stores(view, "slots", newRV_noinc((SV *)slots));
+        hv_stores(view, "references", newRV_noinc((SV *)references));
+        if (ctx->table.buckets)
+            for (i = 0; i <= ctx->table.mask; i++) {
+                dds_node *node;
+                for (node = ctx->table.buckets[i]; node; node = node->next) {
+                    int r;
+                    for (r = 0; r < 2; r++) {
+                        dds_role *role = r ? &node->ref : &node->slot;
+                        HV *row;
+                        if (!role->present) continue;
+                        row = newHV();
+                        hv_stores(row, "address", newSVuv(node->address));
+                        hv_stores(row, "name", newSVsv(role->name));
+                        hv_stores(row, "depth", newSVuv(role->depth));
+                        hv_stores(row, "count", newSVuv(role->count));
+                        hv_stores(row, "encounters", newSVuv(role->encounters));
+                        hv_stores(row, "readonly", newSViv(role->readonly));
+                        hv_stores(row, "weak", newSViv(role->weak));
+                        hv_stores(row, "done", newSViv(role->done && role->done->ready));
+                        av_push(r ? references : slots, newRV_noinc((SV *)row));
+                    }
+                }
+            }
+        RETVAL = newRV_noinc((SV *)view);
+    }
+OUTPUT:
+    RETVAL
+
+SV *
+_xs_get_lexicals(rv)
+    SV *rv
+CODE:
+    {
+        HV *values = newHV();
+        CV *cv;
+        if (!SvROK(rv) || SvTYPE(SvRV(rv)) != SVt_PVCV)
+            croak("Expected a code reference");
+        cv = (CV *)SvRV(rv);
+        if (!CvISXSUB(cv) && CvPADLIST(cv)) {
+            PADLIST *padlist = CvPADLIST(cv);
+            PADNAMELIST *names = PadlistNAMES(padlist);
+            PAD *pad = PadlistARRAY(padlist)[CvDEPTH(cv) ? CvDEPTH(cv) : 1];
+            SSize_t i;
+            for (i = PadnamelistMAX(names); i >= 0; i--) {
+                PADNAME *name = PadnamelistARRAY(names)[i];
+                if (name && PadnamePV(name) && PadnameOUTER(name) && !PadnameIsOUR(name)) {
+                    SV **value = av_fetch(pad, i, 0);
+                    if (value && *value) {
+                        SV *index = sv_2mortal(newSViv(i));
+                        SV *ref = sv_2mortal(newRV_inc(*value));
+                        hv_store(values, PadnamePV(name), PadnameUTF8(name) ? -(I32)PadnameLEN(name) : (I32)PadnameLEN(name), newSVsv(ref), 0);
+                        hv_store_ent(values, index, newSVsv(ref), 0);
+                    }
+                }
+            }
+        }
+        RETVAL = newRV_noinc((SV *)values);
+    }
+OUTPUT:
+    RETVAL
+
 void
 dualvar(num,str)
     SV *	num
@@ -256,6 +335,7 @@ CODE:
     ST(0) = sv_newmortal();
     (void)SvUPGRADE(ST(0),SVt_PVNV);
     sv_setpvn(ST(0),ptr,len);
+    if (SvUTF8(str)) SvUTF8_on(ST(0));
     if(SvNOK(num) || SvPOK(num) || SvMAGICAL(num)) {
 	SvNVX(ST(0)) = SvNV(num);
 	SvNOK_on(ST(0));
@@ -1046,5 +1126,6 @@ legal_keys(hash)
 #endif
 
 BOOT:
+dds_api_boot(aTHX);
 newXSproto("Data::Dump::Streamer::SvREADONLY_ref", XS_Data__Dump__Streamer_SvREADONLY, file,"$;$");
 newXSproto("Data::Dump::Streamer::SvREFCNT_ref", XS_Data__Dump__Streamer_SvREFCNT, file,"$;$");

@@ -12,3 +12,4 @@ lib/Data/Dump/Streamer.o
 lib/DDS.pm
 Data-Dump-Streamer-*/
 *.bak
+/src/*.o

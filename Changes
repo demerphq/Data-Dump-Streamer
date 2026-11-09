@@ -1,3 +1,47 @@
+2.42
+
+Perltidy source to my preferred format. Fixed issues serializing
+the global stash. Added test to detect if serializing the global
+stash breaks anything.
+
+Replace the Perl graph analyzer and emitter with a mandatory XS engine.
+Keep breadth-first canonical names and sparse identity tracking, followed
+by depth-first output and typed fixups. Move constructors, options,
+dumping entry points, and callback dispatch into XS as well. Remove the
+Perl printer classes, duplicate sorters, and obsolete compatibility shims.
+Use heap frames for deep graphs;
+protect borrowed values when user callbacks can run.
+
+Keep catalogue addresses opaque and use them only as lookup keys. Do not
+attach weak identity witnesses or back-reference magic to input values.
+Retain active callback work and deferred glob values explicitly. Changes
+to the graph during dumping are unsupported and handled on a best-effort
+basis; call Data again after changing the graph structure.
+
+Preserve sharing between glob slots and ordinary graph locations,
+including competing deferred globs. Canonical names now honor numeric
+minimum depths. Dumps involving glob scalar slots may use shallower
+ordinary locations or spell out the SCALAR slot explicitly.
+
+Run postdump hooks once per original object after graph serialization and
+fixups finish, including distinct objects sharing one proxy and chained
+proxies. Snapshot the selected original referent without an extra tied
+FETCH. Clean up pending invocants if output or a hook throws.
+
+The native emitter imposes a traversal-depth limit of 16384 scalar and
+referent visits, approximately 8192 nested containers. The previous Perl
+engine had no explicit limit. Dumper objects are no longer cloned into
+ithreads; construct a new dumper in each child interpreter.
+
+Require Perl 5.22 or later. Add CI for every stable series through 5.44,
+a development Perl with the refcounted stack, and ithreads. Remove the
+B::Utils, Text::Balanced, Text::Abbrev, and ExtUtils::Depends dependencies.
+
+Preserve UTF-8 flags for ASCII and Latin-1 scalar values with Unicode
+escapes, including empty Unicode strings. Harden regexp interpolation
+and delimiter escaping. Preserve distinct dualvar numeric values during
+array run-length encoding, and defer weakening until graph fixups finish.
+
 2.41
 
 Merged in all the open PR's. Some MUCH much later than I originally

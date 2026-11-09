@@ -1,10 +1,10 @@
 {
    "abstract" : "Accurately serialize a data structure as Perl code.",
    "author" : [
-      "Yves Orton <yves@cpan.org>, Joshua ben Jore <jjore@cpan.org>"
+      "Yves Orton <yves@cpan.org>"
    ],
    "dynamic_config" : 1,
-   "generated_by" : "Module::Build version 0.4232",
+   "generated_by" : "Module::Build version 0.4234",
    "license" : [
       "perl_5"
    ],
@@ -22,9 +22,9 @@
             "Data::Dumper" : "0",
             "Devel::Peek" : "0",
             "ExtUtils::CBuilder" : "0",
+            "Scalar::Util" : "0",
             "Symbol" : "0",
             "Test::More" : "0",
-            "Text::Abbrev" : "0",
             "base" : "0",
             "overload" : "0",
             "re" : "0",
@@ -36,9 +36,8 @@
       },
       "configure" : {
          "requires" : {
-            "ExtUtils::Depends" : "0",
             "Module::Build" : "0",
-            "perl" : "5.006"
+            "perl" : "5.022"
          }
       },
       "runtime" : {
@@ -52,16 +51,13 @@
          "requires" : {
             "B" : "0",
             "B::Deparse" : "0",
-            "B::Utils" : "0",
             "Data::Dumper" : "0",
             "DynaLoader" : "0",
             "Exporter" : "0",
             "Hash::Util" : "0",
-            "IO::File" : "0",
+            "IO::Handle" : "0",
             "Symbol" : "0",
-            "Text::Abbrev" : "0",
-            "Text::Balanced" : "0",
-            "overload" : "0",
+            "perl" : "5.022",
             "re" : "0",
             "strict" : "0",
             "vars" : "0",
@@ -73,11 +69,11 @@
    "provides" : {
       "Data::Dump::Streamer" : {
          "file" : "lib/Data/Dump/Streamer.pm",
-         "version" : "2.41"
+         "version" : "2.42"
       },
       "Data::Dump::Streamer::Deparser" : {
          "file" : "lib/Data/Dump/Streamer.pm",
-         "version" : "2.41"
+         "version" : "2.42"
       }
    },
    "release_status" : "stable",
@@ -89,6 +85,6 @@
          "url" : "https://github.com/demerphq/Data-Dump-Streamer"
       }
    },
-   "version" : "2.41",
+   "version" : "2.42",
    "x_serialization_backend" : "JSON::PP version 4.16"
 }
