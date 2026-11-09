@@ -74,6 +74,7 @@ and delimiter escaping. Preserve distinct dualvar numeric values during
 array run-length encoding, and defer weakening until graph fixups finish.
 Preserve literal Unicode pattern whitespace in extended regexps instead
 of turning ignored characters into required hex escapes.
+Use the fixed Unicode whitespace set without private regexp-parser macros.
 Retain UTF-8 encoding when copying escaped wide regexp characters into
 generated source, so reconstruction does not reinterpret individual bytes.
 Load compression dependencies lazily during decompression as well as

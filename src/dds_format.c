@@ -761,15 +761,20 @@ SV *dds_regex(pTHX_ dds_ctx *ctx, SV *rv)
 
     /* In /x patterns a literal whitespace character and an escaped one
      * have different meanings. Keep Unicode Pattern_White_Space literal
-     * too, using the same character classification as the regexp parser. */
+     * too. Its five non-ASCII members are fixed by Unicode; the parser's
+     * internal classifier is not exposed to extensions on newer Perls. */
     if (strchr(DDS_PV(mods), 'x')) {
         bool preserve_layout = FALSE;
 
         for (i = 0; i < len; i += width) {
-            width = SvUTF8(pattern) ? UTF8SKIP(p + i) : 1;
+            UV ch = p[i];
 
-            if (p[i] < 32 || p[i] == 127 ||
-                (p[i] > 126 && is_PATWS_safe(p + i, p + len, SvUTF8(pattern)))) {
+            width = 1;
+            if (SvUTF8(pattern))
+                ch = utf8_to_uvchr_buf(p + i, p + len, &width);
+
+            if (ch < 32 || ch == 127 || ch == 0x85 || ch == 0x200e || ch == 0x200f ||
+                ch == 0x2028 || ch == 0x2029) {
                 preserve_layout = TRUE;
                 break;
             }
