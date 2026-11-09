@@ -760,15 +760,22 @@ SV *dds_regex(pTHX_ dds_ctx *ctx, SV *rv)
     p = (const U8 *)SvPV(pattern, len);
 
     /* In /x patterns a literal whitespace character and an escaped one
-     * have different meanings. Compile the original string in that case. */
+     * have different meanings. Keep Unicode Pattern_White_Space literal
+     * too, using the same character classification as the regexp parser. */
     if (strchr(DDS_PV(mods), 'x')) {
-        bool control = FALSE;
+        bool preserve_layout = FALSE;
 
-        for (i = 0; i < len; i++)
-            if (p[i] < 32 || p[i] == 127)
-                control = TRUE;
+        for (i = 0; i < len; i += width) {
+            width = SvUTF8(pattern) ? UTF8SKIP(p + i) : 1;
 
-        if (control) {
+            if (p[i] < 32 || p[i] == 127 ||
+                (p[i] > 126 && is_PATWS_safe(p + i, p + len, SvUTF8(pattern)))) {
+                preserve_layout = TRUE;
+                break;
+            }
+        }
+
+        if (preserve_layout) {
             out = DDS_TEMP(newSVpvs("do { my $p = "));
             DDS_CAT(out, dds_qquote(aTHX_ pattern));
             sv_catpvs(out, "; qr/$p/");

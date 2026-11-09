@@ -86,6 +86,40 @@ for my $source ("a # a comment\nb", "a\tb", "a\rb", "a\0b", "\x{100}/\x{263a}")
 }
 
 {
+    my @extended_modes= ('x');
+    push @extended_modes, 'xx' if $] >= 5.026;
+
+    for my $codepoint (0x85, 0x200e, 0x200f, 0x2028, 0x2029) {
+        my $source= 'a' . chr($codepoint) . 'b';
+        utf8::upgrade($source);
+
+        for my $mode (@extended_modes) {
+
+            # Compile /xx dynamically so the test still parses before 5.26.
+            my $original= eval 'qr/$source/' . $mode;
+            die $@ if $@;
+            my $label= sprintf 'U+%04X /%s', $codepoint, $mode;
+            ok('ab' =~ $original,
+                "$label: original ignores pattern whitespace");
+
+            my $text= Dump($original)->Terse(1)->Out;
+            my $copy= eval $text;
+            is($@, '', "$label: output evaluates") or diag $text;
+            isa_ok($copy, 'Regexp', "$label: restored pattern");
+            next unless ref($copy) eq 'Regexp';
+
+            for my $subject ('ab', $source, 'acb') {
+                is(
+                    !!($subject =~ $copy),
+                    !!($subject =~ $original),
+                    "$label: whitespace matching survives"
+                ) or diag $text;
+            }
+        }
+    }
+}
+
+{
     my $original= qr/a.b/im;
     my ($pattern, $modifiers)= regex($original);
     is($pattern, 'a.b', 'compatibility API returns the source pattern');
