@@ -16,6 +16,8 @@ jobs:
       fail-fast: false
       matrix:
         perl:
+          - '5.18'
+          - '5.20'
           - '5.22'
           - '5.24'
           - '5.26'
@@ -36,15 +38,15 @@ jobs:
       - name: Report interpreter
         run: perl -V
       - name: Install build and test dependencies
-        run: cpanm --verbose Module::Build PadWalker Algorithm::Diff
+        run: cpanm --verbose PadWalker Algorithm::Diff
       - name: Install optional JSON test dependency
         continue-on-error: true
         run: cpanm --verbose Cpanel::JSON::XS
       - name: Configure and test
         run: |
-          perl Build.PL DDS
-          perl Build
-          perl Build test
+          perl Makefile.PL DDS
+          make
+          make test
 
   refcounted-stack:
     name: Development Perl with refcounted stack
@@ -68,13 +70,13 @@ jobs:
           perlbrew use dds-rc-stack
           perl -V
           perl -e 'die "Refcounted stack is disabled\n" unless Internals::stack_refcounted() & 1'
-          perl "$dds_cpanm" --verbose Module::Build PadWalker Algorithm::Diff
+          perl "$dds_cpanm" --verbose PadWalker Algorithm::Diff
           if ! perl "$dds_cpanm" --verbose Cpanel::JSON::XS; then
             echo 'Optional JSON dependency installation failed; its tests skip if the module is unavailable.'
           fi
-          perl Build.PL DDS
-          perl Build
-          PERL_DESTRUCT_LEVEL=2 perl Build test
+          perl Makefile.PL DDS
+          make
+          PERL_DESTRUCT_LEVEL=2 make test
 
   threaded:
     name: Perl 5.44 with ithreads
@@ -85,11 +87,11 @@ jobs:
         with:
           perl-version: '5.44'
           multi-thread: true
-      - run: cpanm --verbose Module::Build PadWalker Algorithm::Diff
+      - run: cpanm --verbose PadWalker Algorithm::Diff
       - name: Install optional JSON test dependency
         continue-on-error: true
         run: cpanm --verbose Cpanel::JSON::XS
       - run: |
           perl -MConfig -e 'die "ithreads disabled\n" unless $Config{useithreads}'
-          perl Build.PL DDS
-          perl Build test
+          perl Makefile.PL DDS
+          make test

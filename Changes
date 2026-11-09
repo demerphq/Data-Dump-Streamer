@@ -1,16 +1,17 @@
 2.42
 
-Perltidy source to my preferred format. Fixed issues serializing
-the global stash. Added test to detect if serializing the global
-stash breaks anything.
-
 Replace the Perl graph analyzer and emitter with a mandatory XS engine.
 Keep breadth-first canonical names and sparse identity tracking, followed
 by depth-first output and typed fixups. Move constructors, options,
 dumping entry points, and callback dispatch into XS as well. Remove the
 Perl printer classes, duplicate sorters, and obsolete compatibility shims.
-Use heap frames for deep graphs;
-protect borrowed values when user callbacks can run.
+Use heap frames for deep graphs and protect borrowed values when user
+callbacks can run.
+
+Use ExtUtils::MakeMaker for configuration, compilation, testing and
+installation. Preserve DDS/NODDS alias selection and native header
+dependencies. Keep the DDS shortcut documentation and a version assignment
+readable by installation tools. Remove Module::Build and ExtUtils::CBuilder requirements.
 
 Keep catalogue addresses opaque and use them only as lookup keys. Do not
 attach weak identity witnesses or back-reference magic to input values.
@@ -40,14 +41,27 @@ referent visits, approximately 8192 nested containers. The previous Perl
 engine had no explicit limit. Dumper objects are no longer cloned into
 ithreads; construct a new dumper in each child interpreter.
 
-Require Perl 5.22 or later. Add CI for every stable series through 5.44,
+Require Perl 5.18 or newer, the oldest version passing the compatibility
+CI assessment. Test every stable series from 5.18 through 5.44,
 a development Perl with the refcounted stack, and ithreads. Remove the
 B::Utils, Text::Balanced, Text::Abbrev, and ExtUtils::Depends dependencies.
+
+Route regexp inspection through the existing compatibility API. Keep
+interpreter-specific regexp, pad and hash storage handling behind
+compatibility helpers. Apply regenerated Devel::PPPort shims to every
+native source file.
+
+Preserve Unicode class policy keys for explicit freezers, selected and
+skipped freezer caches, ignore policies, and key-order callbacks. Define
+option selectors and method registration together with named constants.
 
 Preserve UTF-8 flags for ASCII and Latin-1 scalar values with Unicode
 escapes, including empty Unicode strings. Harden regexp interpolation
 and delimiter escaping. Preserve distinct dualvar numeric values during
 array run-length encoding, and defer weakening until graph fixups finish.
+
+Apply the preferred source formatting and fix serialization of the global
+stash. Add a regression test for dumping the global stash.
 
 2.41
 

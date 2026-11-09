@@ -51,11 +51,12 @@ This preserves the public object shape while construction, options, and
 dumping entry points run in XS. Engine traversal must not use the Perl
 hash as its working catalogue.
 
-Keep Module::Build, with C sources under `src/` and XS bindings under
-`lib/Data/Dump/`. Perl 5.22 is the supported minimum. CI covers each stable
-series from 5.22 through 5.44, development Perl 5.45.4 with the refcounted
-stack, and a separate threaded 5.44 build. The version matrix runs in CI;
-local correctness checks use 5.22.4, 5.44.0, and the development build.
+Use ExtUtils::MakeMaker with Streamer.xs at the repository root and native
+sources under src/. The minimum supported version is Perl 5.18, the
+oldest stable series passing the compatibility assessment. CI tests every
+stable series from 5.18 through 5.44, development Perl with the refcounted
+stack, and a separate threaded build. The older probe lanes and 5.6
+bootstrap are removed. Local checks include threaded and unthreaded Perl.
 
 ## Current validation status
 
@@ -76,14 +77,11 @@ local correctness checks use 5.22.4, 5.44.0, and the development build.
 
 `planning/` is intended to be tracked in Git. It is excluded by
 `MANIFEST.SKIP` and is not listed in `MANIFEST`, so it is outside release
-distributions. `INSTALL.SKIP` also names it explicitly; the actual
-Module::Build installation boundary comes from discovering modules, POD,
-and XS under `lib/` and installing from `blib/`.
-
-Module::Build's default test discovery uses `t/` and an optional root
-`test.pl`. The planning directory is outside those paths. Keep runnable
-regression tests under `t/`, Perl/XS modules under `lib/`, and linked C
-sources under `src/`. The C sources ship but are not installed as modules.
+distributions. INSTALL.SKIP remains an additional guard used by
+ExtUtils::Install. MakeMaker's explicit PM map installs only the public module
+and the optional generated DDS alias. Tests are discovered under t/.
+Streamer.xs and the C sources ship in the archive but are compiled rather
+than installed as source modules.
 
 Do not add planning files to `MANIFEST`, `.gitignore`, installation maps,
 or test globs. Keep this directory documentation-only so repository-wide

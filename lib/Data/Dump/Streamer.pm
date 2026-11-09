@@ -1,5 +1,5 @@
 package Data::Dump::Streamer;
-use 5.022;
+use 5.018;
 use strict;
 use warnings;
 use warnings::register;
@@ -341,7 +341,6 @@ our @ISA= qw(B::Deparse);
 my %cache;
 
 our $VERSION= '2.42';
-$VERSION= eval $VERSION;
 if ($VERSION ne $Data::Dump::Streamer::VERSION) {
     die
         "Incompatible Data::Dump::Streamer::Deparser v$VERSION vs Data::Dump::Streamer v$Data::Dump::Streamer::VERSION";
@@ -741,11 +740,11 @@ Data::Dump::Streamer is a bit long to type sometimes. However because this
 technically means polluting the root level namespace, and having it listed
 on CPAN, I have elected to have the installer not install it by default.
 If you wish it to be installed you must explicitly state so when
-Build.Pl is run:
+Makefile.PL is run:
 
-  perl Build.Pl DDS [Other Module::Build options]
+  perl Makefile.PL DDS [Other MakeMaker options]
 
-Then a normal './Build test, ./Build install' invocation will install DDS.
+Then a normal 'make test, make install' invocation will install DDS.
 
 Using DDS is identical to Data::Dump::Streamer.
 
@@ -766,7 +765,8 @@ doing as => 'DBI' will be mercilessly ridiculed.
 
 =head2 Interpreter and engine requirements
 
-Perl 5.22 or later and a C compiler are required. Both graph analysis and
+Perl 5.18 or newer and a C compiler are required.
+Both graph analysis and
 Perl source emission run in XS. Object construction, options, dumping entry points, and callback dispatch
 also run in XS. Perl supplies loading and export glue, B::Deparse and
 PadWalker integration, compression helpers, and developer diagnostics.

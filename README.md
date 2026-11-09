@@ -2,14 +2,15 @@
     To install this module type the following:
 
 ```
-      perl Build.PL
-      ./Build
-      ./Build test
-      ./Build install
+      perl Makefile.PL
+      make
+      make test
+      make install
 ```
 
-Perl 5.22 or later and a functional C compiler are required. Graph
-analysis and Perl source emission use a mandatory XS engine. Construction, options, entry points, and callback dispatch also use XS.
+Perl 5.18 or newer and a functional C compiler are required.
+Graph analysis and Perl source emission use a mandatory XS engine.
+Construction, options, entry points, and callback dispatch also use XS.
 Perl supplies loading/export glue and integration with B::Deparse,
 PadWalker, and the optional compression modules.
 
@@ -19,8 +20,8 @@ definitions and XPerl helpers to be available and bypasses constructors.
 
 ## DEPENDENCIES
 
-Module::Build is required to configure and build the distribution. Runtime
-dependencies are included with supported Perl versions.
+ExtUtils::MakeMaker configures and builds the distribution. Runtime
+and test dependencies are listed in Makefile.PL.
 
 Optional dependencies:
 
@@ -28,7 +29,7 @@ Optional dependencies:
 - Algorithm::Diff and Cpanel::JSON::XS enable additional test coverage.
 - Compress::Zlib and MIME::Base64 enable compressed scalar output.
 
-CI tests every stable Perl series from 5.22 through 5.44, plus a development
+CI tests every stable Perl series from 5.18 through 5.44, plus a development
 Perl built with the refcounted stack and a separate threaded build.
 
 ## AUTHOR AND COPYRIGHT

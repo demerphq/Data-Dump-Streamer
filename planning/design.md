@@ -27,11 +27,11 @@ Use a small XS binding layer over C functions that receive interpreter
 context explicitly. Follow Sereal's `PERL_NO_GET_CONTEXT` and
 `pTHX_`/`aTHX_` conventions where supported by the chosen Perl floor.
 
-Source responsibilities follow Module::Build's separate C source support:
+Source responsibilities are split between the XS entry point and native C files:
 
 | Component | Responsibility |
 | --- | --- |
-| `lib/Data/Dump/Streamer.xs` | Entry points, magic attachment, lexical inspection, and reconstruction utilities |
+| `Streamer.xs` | Entry points, magic attachment, lexical inspection, and reconstruction utilities |
 | `dds_engine.h` | C structures, state enums, ownership contracts, and interfaces |
 | `dds_analyze.c` | Breadth-first scan, candidate registration, and closure-root discovery |
 | `dds_emit.c` | Depth-first emission and dependency-driven fixups |
@@ -39,9 +39,9 @@ Source responsibilities follow Module::Build's separate C source support:
 | `dds_engine.c` | Owned context, native pointer table, callback guards, and operation cleanup |
 | `dds_api.c` | Native construction, option methods, entry points, and reentrant facade selection |
 
-Keep C sources in `src/` with `c_source => 'src'`. The builder also checks
-header timestamps before deciding whether to rebuild objects. Clean builds
-on all three local interpreters verify the compilation and linkage.
+Keep C sources in src/. MakeMaker copies translation units into the build
+directory and uses its standard platform compiler rules. Explicit object
+dependencies include the shared engine and portability headers.
 
 ## Object ownership and lifetime
 

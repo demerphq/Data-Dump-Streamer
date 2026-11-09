@@ -54,3 +54,7 @@ DDS\.pm
 ^MYMETA\.json$
 .travis.yml
 tidyall.sh
+
+# MakeMaker build copies and generated XS output.
+^dds_[^/]+\.c$
+^Streamer\.(?:c|bs|o)$
