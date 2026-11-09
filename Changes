@@ -28,6 +28,13 @@ fixups finish, including distinct objects sharing one proxy and chained
 proxies. Snapshot the selected original referent without an extra tied
 FETCH. Clean up pending invocants if output or a hook throws.
 
+Preserve XPerl class storage through the class snapshot helpers, including
+ordinary blessed payloads, inherited and role fields, sharing, aliases,
+cycles, weak references, and readonly fields. Resolve field replacements
+before hydration and defer class thaw methods until storage is attached.
+Scope helper variables independently of caller code and retain UTF-8 class
+names. Use XPerl's direct hash traversal API for compact hash layouts.
+
 The native emitter imposes a traversal-depth limit of 16384 scalar and
 referent visits, approximately 8192 nested containers. The previous Perl
 engine had no explicit limit. Dumper objects are no longer cloned into

@@ -131,6 +131,52 @@ dds_analyze_child(pTHX_ dds_ctx *ctx, SV *sv, UV depth,
     LEAVE;
 }
 
+#if defined(class_object_to_hash) && defined(PERL_MAGIC_class_storage)
+static SV *
+dds_class_fields_name(pTHX_ dds_ctx *ctx)
+{
+    SV *name = DDS_TEMP(newSV(0));
+    bool conflict;
+    do {
+        UV i;
+        const char *identifier;
+        conflict = FALSE;
+        sv_setpvf(name, "$__DDS_class_fields_%" UVuf, ++ctx->class_serial);
+        identifier = DDS_PV(name) + 1;
+        for (i = 0; i < ctx->root_count; i++) {
+            if (strstr(DDS_PV(ctx->roots[i].name), identifier)) {
+                conflict = TRUE;
+                break;
+            }
+        }
+    } while (conflict);
+    return name;
+}
+
+static void
+dds_analyze_class(pTHX_ dds_ctx *ctx, dds_node *node, SV *target, UV depth)
+{
+    MAGIC *storage;
+    SV *rv;
+    if (!SvOBJECT(target) || !SvMAGICAL(target)) return;
+    storage = mg_find(target, PERL_MAGIC_class_storage);
+    if (!storage || !storage->mg_obj) return;
+    /* The snapshot shares field slots with the object. Keep it separate
+     * from the public payload so alias fixups finish before hydration. */
+    rv = DDS_TEMP(newRV_inc(target));
+    node->class_fields = class_object_to_hash(rv);
+    (void)hv_delete((HV *)SvRV(node->class_fields), "$self", 5, G_DISCARD);
+    node->class_fields_name = newSVsv(dds_class_fields_name(aTHX_ ctx));
+    if (strchr("@%&", DDS_PV(node->ref.name)[0]))
+        node->class_package = newSVsv(dds_class(aTHX_ target));
+    if (ctx->class_tail) ctx->class_tail->class_next = node;
+    else ctx->class_head = node;
+    ctx->class_tail = node;
+    dds_enqueue(aTHX_ ctx, node->class_fields, depth + 2,
+                 node->class_fields_name, FALSE);
+}
+#endif
+
 static bool
 dds_ignored(pTHX_ dds_ctx *ctx, SV *target)
 {
@@ -288,6 +334,9 @@ dds_analyze(pTHX_ dds_ctx *ctx)
                 role->encounters = 1;
                 node->expanded = TRUE;
             }
+#if defined(class_object_to_hash) && defined(PERL_MAGIC_class_storage)
+            if (node) dds_analyze_class(aTHX_ ctx, node, target, depth);
+#endif
             if (SvTYPE(target) == SVt_PVAV) {
                 SSize_t k, last;
                 if (SvTIED_mg(target, PERL_MAGIC_tied)) dds_callback_guard(aTHX_ ctx);

@@ -202,3 +202,31 @@ Before release, review the C changes and remote CI results, broaden
 benchmarks to realistic large graphs and callback-heavy inputs, and
 consider additional adversarial magic/reentry coverage. This is a pushed
 implementation checkpoint rather than a published CPAN release.
+
+## XPerl class storage
+
+Use `class_object_to_hash` only when the public helper and class-storage
+magic are present. The owned shallow snapshot shares field slots with the
+source object. Remove its `$self` entry and keep the ordinary payload in
+the existing graph traversal. Catalogue addresses remain lookup keys.
+
+Each snapshot gets a private variable whose name avoids all named roots,
+including closure roots after the analysis restart. Analyse snapshot
+fields with the ordinary breadth-first queue and emit them after the
+public roots. An inner lexical block contains helpers and graph fixups.
+Declare requested roots outside that block so they remain accessible.
+Terse class dumps use an enclosing do expression to return the roots.
+
+Class hydration is a typed fixup. It waits for pending scalar/reference
+replacements and alias_av/alias_hv calls affecting its snapshot or the
+canonical object's path. Alias calls retain an explicit destination path,
+separate from their printable argument expression. A pending-alias counter
+avoids scanning the fixup queue when no replacements remain. Ordinary
+thaws can complete prerequisite fields. Thaws on class payloads wait for
+that payload's storage to be restored. Weakening follows graph fixups.
+
+The helper restores storage onto the reconstructed blessed payload, which
+preserves object identity and bypasses constructors. Field snapshots leave
+scope after fixups. Explicit freezer replacements retain precedence.
+The public HvENTRY_* traversal macros adapt key collection and hidden-key
+collection to XPerl's compact hashes without disturbing each() state.

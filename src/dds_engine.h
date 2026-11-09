@@ -6,6 +6,17 @@
 #include "perl.h"
 #include "XSUB.h"
 
+/* XPerl exposes direct traversal for its compact hash layout. */
+#ifdef HvENTRY_LIMIT
+#  define DDS_HASH_LIMIT(hv) HvENTRY_LIMIT(hv)
+#  define DDS_HASH_FIRST(hv, i) HvENTRY_FIRST(hv, i)
+#  define DDS_HASH_NEXT(hv, he) HvENTRY_NEXT(hv, he)
+#else
+#  define DDS_HASH_LIMIT(hv) (HvMAX(hv) + 1)
+#  define DDS_HASH_FIRST(hv, i) (HvARRAY(hv) ? HvARRAY(hv)[i] : NULL)
+#  define DDS_HASH_NEXT(hv, he) HeNEXT(he)
+#endif
+
 typedef struct dds_node dds_node;
 typedef struct dds_mark dds_mark;
 typedef struct dds_ctx dds_ctx;
@@ -32,8 +43,11 @@ struct dds_node {
     dds_role slot, ref;
     /* Owned freezer results. These are independent of the address key. */
     SV *proxy, *thaw, *postop;
+    /* Owned XPerl field snapshot and its private output variable. */
+    SV *class_fields, *class_fields_name, *class_package;
+    dds_node *class_next;
     UV key_width, key_count;
-    bool frozen, expanded, ignored, glob_dumped, postop_queued;
+    bool frozen, expanded, ignored, glob_dumped, postop_queued, class_restored;
 };
 
 typedef struct {
@@ -57,7 +71,7 @@ struct dds_mark {
 
 typedef enum {
     DDS_FIX_SLOT, DDS_FIX_REF, DDS_FIX_CALL, DDS_FIX_BLESS,
-    DDS_FIX_LOCK, DDS_FIX_THAW, DDS_FIX_GLOB, DDS_FIX_VAR
+    DDS_FIX_LOCK, DDS_FIX_THAW, DDS_FIX_GLOB, DDS_FIX_VAR, DDS_FIX_CLASS
 } dds_fix_kind;
 
 typedef struct dds_fix {
@@ -65,7 +79,7 @@ typedef struct dds_fix {
     dds_fix_kind kind;
     /* Owned output strings/arguments. node and mark borrow stable C
      * records that outlive the fixup until emission/catalogue cleanup. */
-    SV *lhs, *text, *class_name;
+    SV *lhs, *text, *class_name, *path;
     AV *args;
     dds_node *node;
     dds_mark *mark;
@@ -103,6 +117,8 @@ struct dds_ctx {
     dds_root *roots;
     UV root_count, root_capacity;
     dds_table table;
+    dds_node *class_head, *class_tail;
+    UV class_serial;
     dds_queue_entry *queue;
     UV queue_head, queue_count, queue_capacity;
     dds_queue_level *queue_levels;
@@ -119,7 +135,7 @@ struct dds_ctx {
     AV *chunks;
     SV *printer;
     dds_style style;
-    UV visits, lookups, candidates, repeats, queue_peak, fixes;
+    UV visits, lookups, candidates, repeats, queue_peak, fixes, pending_aliases;
     IV column;
     bool cataloged, busy, do_nl, symbol_required, callbacks, final_weakening;
 };

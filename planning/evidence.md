@@ -443,3 +443,51 @@ The focused eight-file suite passes 856 assertions under Valgrind on
 RC-stack debug Perl with child tracing and PERL_DESTRUCT_LEVEL=2; all
 per-process diagnostic logs are empty
 (`/tmp/dds-shared-postdump-final-valgrind.*.log`).
+
+## XPerl class snapshots and payloads
+
+XPerl's Data::Dumper uses the public class snapshot helpers. DDS now uses
+`class_object_to_hash` behind compile-time feature checks, removes the
+snapshot's source `$self` RV, and owns the remaining shallow field view.
+The native analyzer catalogues field slots with the ordinary graph. The
+payload retains its own canonical identity. Reconstruction attaches class
+storage with `builtin::class_object_from_hash` after prerequisite field
+replacements, and bypasses constructors and ADJUST.
+
+Typed class fixups wait for scalar/reference fixes and alias_av/alias_hv
+calls affecting their field view. Calls carry an explicit destination path
+for dependency checks. Native class thaws wait for their storage, while
+ordinary thaws can complete prerequisite fields. Snapshot helper variables
+live in an inner lexical block. Requested root declarations stay outside
+that block. UTF-8 stash names retain their flags, and named aggregate roots
+are blessed before storage attachment. Direct hash traversal uses XPerl's
+public HvENTRY_* API with the existing bucket walk on stock Perl.
+
+The 173 assertions in `t/xperl_class.t` cover scalar, hash and array
+payloads; sharing and cycles; scalar/aggregate field aliases; weak edges;
+readonly fields; inheritance and roles; empty classes; Unicode class and
+field names; freezer precedence; class and prerequisite thaws; scalar slot
+aliases through other thawed class payloads; callback failure and reuse;
+helper scope; declared and aggregate roots; repeated output; and Terse.
+
+Terra reproduced dependency ordering and helper-scope defects during the
+implementation. The regressions now pass. Its final read-only follow-up
+verified alias-call dependencies, path ownership and cleanup, and balanced
+pending counts, with no further concrete finding. It did not independently
+rerun the complete suites or Valgrind.
+
+Final local results, all in 37 test files:
+
+- XPerl 5.45.5 with the refcounted stack: 5161 tests pass.
+- Ordinary XPerl 5.45.5: 5160 tests pass. Optional module availability differs.
+- Stock Perl 5.22.4, 5.44.0 and RC-stack debug 5.45.4: 4988 tests pass each.
+  The XPerl-specific file skips on these interpreters.
+
+Logs are `/tmp/dds-xperl-final-{rc,plain,522,544,dev}-test.log`.
+The class-specific file passes all 173 assertions under Valgrind on XPerl
+with the refcounted stack and PERL_DESTRUCT_LEVEL=2. The diagnostic log is
+empty (`/tmp/dds-xperl-class-valgrind.log`). This run checks invalid memory
+access, not leak freedom. All native sources pass gcc -Wall -Wextra syntax
+checks against Perl 5.22.4, 5.44.0 and XPerl with the refcounted stack.
+POD and whitespace checks pass. No core checkout or interpreter installation
+was modified for this work.

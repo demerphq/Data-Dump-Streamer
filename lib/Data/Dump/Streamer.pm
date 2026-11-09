@@ -425,6 +425,23 @@ breadth first mode to perform structural analysis, and then
 in depth first mode to actually produce the output, but
 obeying the depth relationships of the first pass.
 
+=head2 XPerl class objects
+
+On XPerl builds providing the class snapshot helpers, DDS preserves native
+C<class> fields as well as the object's ordinary blessed payload. This
+includes inherited and role fields, scalar aliases, aggregate sharing,
+cycles, weak references, and readonly field values. Class definitions must
+already be loaded when the generated code is evaluated. Reconstruction
+uses C<builtin::class_object_from_hash> and bypasses constructors and
+C<ADJUST> blocks.
+
+Explicit freezer replacements take precedence. DDS resolves field aliases
+before attaching class storage, and attaches storage before calling a thaw
+method on that object. Temporary field snapshots are scoped inside the
+output. C<Terse> uses a C<do> expression when class reconstruction needs
+multiple statements. Generated class dumps require XPerl's snapshot helpers
+to reconstruct their objects.
+
 =head2 Caveats Dumping Closures (CODE Refs)
 
 As of version 1.11 DDS has had the ability to dump closures properly. This

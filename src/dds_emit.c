@@ -118,13 +118,15 @@ dds_add_fix(pTHX_ dds_ctx *ctx, dds_fix *fix)
         ctx->fix_tail = fix;
     }
     ctx->fixes++;
+    if (fix->kind == DDS_FIX_SLOT || fix->kind == DDS_FIX_REF || fix->path) ctx->pending_aliases++;
 }
 
 static void
-dds_call_fix(pTHX_ dds_ctx *ctx, const char *function, SV *args, dds_node *source)
+dds_call_fix(pTHX_ dds_ctx *ctx, const char *function, SV *args, dds_node *source, SV *path)
 {
     dds_fix *fix = dds_new_fix(aTHX_ DDS_FIX_CALL, args, source);
     fix->text = newSVpv(function, 0);
+    if (ctx->class_head && path) fix->path = newSVsv(path);
     dds_add_fix(aTHX_ ctx, fix);
 }
 
@@ -133,7 +135,7 @@ dds_free_fix(pTHX_ dds_fix *fix)
 {
     SvREFCNT_dec(fix->lhs); SvREFCNT_dec(fix->text);
     SvREFCNT_dec(fix->class_name); SvREFCNT_dec(fix->args);
-    SvREFCNT_dec(fix->glob);
+    SvREFCNT_dec(fix->glob); SvREFCNT_dec(fix->path);
     Safefree(fix);
 }
 
@@ -204,6 +206,45 @@ dds_thaw_output(pTHX_ dds_ctx *ctx, dds_fix *fix)
     }
 }
 
+static bool
+dds_path_contains(pTHX_ SV *parent, SV *path)
+{
+    STRLEN plen, len;
+    const char *p = SvPV(parent, plen), *s = SvPV(path, len);
+    return len >= plen && memEQ(p, s, plen)
+        && (len == plen || s[plen] == '-' || s[plen] == '{' || s[plen] == '[');
+}
+
+static bool
+dds_class_fields_ready(pTHX_ dds_ctx *ctx, dds_node *node)
+{
+    dds_fix *fix;
+    /* Slot replacement must precede hydration, which shares the final
+     * field SVs. Ordinary thaws can make those replacements ready. */
+    if (!ctx->pending_aliases) return TRUE;
+    for (fix = ctx->fix_head; fix; fix = fix->next) {
+        SV *path = fix->kind == DDS_FIX_SLOT || fix->kind == DDS_FIX_REF
+            ? fix->lhs : fix->path;
+        if (path && (dds_path_contains(aTHX_ node->class_fields_name, path)
+                     || dds_path_contains(aTHX_ path, node->ref.name)))
+            return FALSE;
+    }
+    return TRUE;
+}
+
+static void
+dds_restore_class(pTHX_ dds_ctx *ctx, dds_node *node)
+{
+    dds_write(aTHX_ ctx, node->class_fields_name);
+    dds_put(aTHX_ ctx, "->{'$self'} = ");
+    dds_write(aTHX_ ctx, dds_ref_expression(aTHX_ ctx, node->ref.name,
+                     node->class_package ? node->class_package : &PL_sv_undef));
+    dds_put(aTHX_ ctx, ";\nbuiltin::class_object_from_hash(");
+    dds_write(aTHX_ ctx, node->class_fields_name);
+    dds_put(aTHX_ ctx, ");\n");
+    node->class_restored = TRUE;
+}
+
 void
 dds_apply_fixes(pTHX_ dds_ctx *ctx, bool final)
 {
@@ -263,8 +304,12 @@ dds_apply_fixes(pTHX_ dds_ctx *ctx, bool final)
                     if (ready) dds_lock_fix_output(aTHX_ ctx, fix);
                     break;
                 case DDS_FIX_THAW:
-                    ready = final;
+                    ready = final && (!fix->node->class_fields || fix->node->class_restored);
                     if (ready) dds_thaw_output(aTHX_ ctx, fix);
+                    break;
+                case DDS_FIX_CLASS:
+                    ready = final && dds_class_fields_ready(aTHX_ ctx, fix->node);
+                    if (ready) dds_restore_class(aTHX_ ctx, fix->node);
                     break;
                 case DDS_FIX_GLOB:
                     ready = TRUE;
@@ -280,6 +325,7 @@ dds_apply_fixes(pTHX_ dds_ctx *ctx, bool final)
             }
             if (!ready) { link = &fix->next; continue; }
             progress = TRUE;
+            if (fix->kind == DDS_FIX_SLOT || fix->kind == DDS_FIX_REF || fix->path) ctx->pending_aliases--;
             *link = fix->next;
             if (fix == ctx->fix_tail) ctx->fix_tail = NULL;
             if (fix->kind == DDS_FIX_GLOB) {
@@ -404,7 +450,8 @@ dds_step_array(pTHX_ dds_ctx *ctx, struct dds_frame *f)
         if (result.alias) {
             SV *args = DDS_TEMP(newSVsv(dds_child_name(aTHX_ name, '@', NULL, 0)));
             sv_catpvf(args, ", %" IVdf, (IV)k);
-            dds_call_fix(aTHX_ ctx, "alias_av", args, result.alias);
+            dds_call_fix(aTHX_ ctx, "alias_av", args, result.alias,
+                          ctx->class_head ? dds_child_name(aTHX_ name, '[', NULL, k) : NULL);
         }
         if (count > 1) {
             SV *text = DDS_TEMP(newSVsv(ctx->style.space));
@@ -501,7 +548,8 @@ dds_step_hash(pTHX_ dds_ctx *ctx, struct dds_frame *f)
         if (result.alias) {
             SV *args = DDS_TEMP(newSVsv(dds_child_name(aTHX_ name, '%', NULL, 0)));
             sv_catpvs(args, ", "); DDS_CAT(args, dds_quote(aTHX_ key, FALSE));
-            dds_call_fix(aTHX_ ctx, "alias_hv", args, result.alias);
+            dds_call_fix(aTHX_ ctx, "alias_hv", args, result.alias,
+                          ctx->class_head ? dds_child_name(aTHX_ name, '{', key, 0) : NULL);
         }
         f->active.sv = (SV *)hv;
     }
@@ -603,7 +651,7 @@ dds_step_sv(pTHX_ dds_ctx *ctx, struct dds_frame *f)
                 }
             }
             else if (depth == 1) {
-                if (ctx->style.declare) { sv_catpvs(text, "my "); DDS_CAT(text, name); sv_catpvs(text, ";\n"); }
+                if (ctx->style.declare && !ctx->class_head) { sv_catpvs(text, "my "); DDS_CAT(text, name); sv_catpvs(text, ";\n"); }
                 sv_catpvs(text, "alias_ref(\\"); DDS_CAT(text, name); sv_catpvs(text, ",\\"); DDS_CAT(text, role->name); sv_catpvs(text, ")");
             }
             else if (ctx->style.purity) {
@@ -627,7 +675,7 @@ dds_step_sv(pTHX_ dds_ctx *ctx, struct dds_frame *f)
         }
         if (!ctx->style.terse && DDS_PV(name)[0] != '&') {
             SV *prefix = DDS_TEMP(newSVpvs(""));
-            if (ctx->style.declare && DDS_PV(name)[0] != '*'
+            if (ctx->style.declare && !ctx->class_head && DDS_PV(name)[0] != '*'
                 && !hv_exists_ent(ctx->lexical_added, name, 0)) {
                 sv_catpvs(prefix, "my"); DDS_CAT(prefix, ctx->style.space);
             }
@@ -698,7 +746,7 @@ dds_step_sv(pTHX_ dds_ctx *ctx, struct dds_frame *f)
             ctx->column += sv_len_utf8(quoted); dds_write(aTHX_ ctx, quoted);
         }
         if (!ctx->style.terse) {
-            if (is_ro && ctx->style.purity) dds_call_fix(aTHX_ ctx, "make_ro", name, NULL);
+            if (is_ro && ctx->style.purity) dds_call_fix(aTHX_ ctx, "make_ro", name, NULL, NULL);
             else if (is_ro) { dds_write(aTHX_ ctx, ctx->style.space); dds_put(aTHX_ ctx, ")"); }
         }
         ctx->do_nl = FALSE;
@@ -706,7 +754,7 @@ dds_step_sv(pTHX_ dds_ctx *ctx, struct dds_frame *f)
   child_done:
     if (add_do) { dds_write(aTHX_ ctx, ctx->style.space); dds_put(aTHX_ ctx, "}"); }
     if ((role && role->weak) || (SvROK(sv) && SvWEAKREF(sv)))
-        dds_call_fix(aTHX_ ctx, "weaken", name, NULL);
+        dds_call_fix(aTHX_ ctx, "weaken", name, NULL, NULL);
     f->result = result;
     return TRUE;
 }
@@ -872,7 +920,7 @@ dds_step_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f)
         bool simple = TRUE;
         STRLEN i;
         for (i = 0; i < len; i++) if (!isALNUMC_A(p[i]) && !strchr("_:>()-", p[i])) simple = FALSE;
-        inline_thaw = simple && strnEQ(p, "->", 2);
+        inline_thaw = !node->class_fields && simple && strnEQ(p, "->", 2);
         function_thaw = simple && len >= 2 && strEQ(p + len - 2, "()");
         if (inline_thaw && function_thaw) {
             dds_write(aTHX_ ctx, DDS_TEMP(newSVpvn(p + 2, len - 4)));
@@ -1057,18 +1105,42 @@ dds_emit_glob(pTHX_ dds_ctx *ctx, GV *gv, SV *name, UV depth)
     }
 }
 
+static void
+dds_emit_class_fields(pTHX_ dds_ctx *ctx)
+{
+    dds_node *node;
+    for (node = ctx->class_head; node; node = node->class_next) {
+        dds_mark *mark = dds_new_mark(aTHX_ ctx);
+        dds_put(aTHX_ ctx, "my ");
+        dds_write(aTHX_ ctx, node->class_fields_name);
+        dds_put(aTHX_ ctx, " = ");
+        (void)dds_emit_sv(aTHX_ ctx, node->class_fields, node->ref.depth + 1,
+                          mark, node->class_fields_name, 0, FALSE);
+        dds_put(aTHX_ ctx, ";\n");
+        mark->ready = TRUE;
+        dds_apply_fixes(aTHX_ ctx, FALSE);
+    }
+}
+
 SV *
 dds_output(pTHX_ dds_ctx *ctx, I32 gimme)
 {
     UV i;
     AV *names, *declared;
     SV *printer;
+    bool class_terse, class_declare;
     dds_clear_emission(aTHX_ ctx);
     dds_load_style(aTHX_ ctx);
     for (i = 0; ctx->cataloged && i < ctx->root_count; i++)
         if (ctx->roots[i].analyzed_ref != (SvROK(ctx->roots[i].sv) ? SvRV(ctx->roots[i].sv) : NULL))
             ctx->cataloged = FALSE;
     if (!ctx->cataloged) dds_analyze(aTHX_ ctx);
+    class_terse = ctx->class_head && ctx->style.terse;
+    class_declare = ctx->class_head && (ctx->style.declare || class_terse);
+    if (class_terse) {
+        ctx->style.terse = FALSE;
+        ctx->style.declare = TRUE;
+    }
     ctx->out = newSVpvs("");
     if (gimme == G_ARRAY) ctx->chunks = newAV();
     printer = dds_hget(aTHX_ ctx->object, "fh");
@@ -1084,6 +1156,7 @@ dds_output(pTHX_ dds_ctx *ctx, I32 gimme)
         SV *prelude = dds_invoke(aTHX_ ctx, ctx->style.compressor, FALSE, G_SCALAR, 0, NULL);
         if (SvTRUE(prelude)) dds_write(aTHX_ ctx, prelude);
     }
+    if (class_terse) dds_put(aTHX_ ctx, "do {\n");
     if (HvTOTALKEYS(ctx->lexical_added)) {
         AV *keys = (AV *)DDS_TEMP((SV *)newAV());
         HE *he; SSize_t k;
@@ -1097,6 +1170,18 @@ dds_output(pTHX_ dds_ctx *ctx, I32 gimme)
         }
         dds_put(aTHX_ ctx, ");\n");
     }
+    if (ctx->class_head) {
+        if (class_declare) {
+            for (i = 0; i < ctx->root_count; i++) {
+                SV *name = ctx->roots[i].name;
+                if (DDS_PV(name)[0] == '*' || DDS_PV(name)[0] == '&'
+                    || hv_exists_ent(ctx->lexical_added, name, 0)) continue;
+                dds_put(aTHX_ ctx, "my "); dds_write(aTHX_ ctx, name);
+                dds_put(aTHX_ ctx, ";\n");
+            }
+        }
+        dds_put(aTHX_ ctx, "{\n");
+    }
     for (i = 0; i < ctx->root_count; i++) {
         dds_mark *mark = dds_new_mark(aTHX_ ctx);
         dds_result result = dds_emit_sv(aTHX_ ctx, ctx->roots[i].sv, 1, mark, ctx->roots[i].name, 0, FALSE);
@@ -1104,10 +1189,24 @@ dds_output(pTHX_ dds_ctx *ctx, I32 gimme)
         dds_put(aTHX_ ctx, ";\n"); mark->ready = TRUE;
         dds_apply_fixes(aTHX_ ctx, FALSE);
     }
+    if (ctx->class_head) {
+        dds_node *node;
+        dds_emit_class_fields(aTHX_ ctx);
+        for (node = ctx->class_head; node; node = node->class_next)
+            dds_add_fix(aTHX_ ctx, dds_new_fix(aTHX_ DDS_FIX_CLASS, NULL, node));
+    }
     dds_apply_fixes(aTHX_ ctx, TRUE);
     ctx->final_weakening = TRUE;
     dds_apply_fixes(aTHX_ ctx, TRUE);
     if (ctx->fix_head) croak("DDS cannot resolve graph fixups; call Data again if the graph changed");
+    if (ctx->class_head) dds_put(aTHX_ ctx, "}\n");
+    if (class_terse) {
+        for (i = 0; i < ctx->root_count; i++) {
+            if (i) dds_put(aTHX_ ctx, ", ");
+            dds_write(aTHX_ ctx, dds_ref_expression(aTHX_ ctx, ctx->roots[i].name, &PL_sv_undef));
+        }
+        dds_put(aTHX_ ctx, ";\n};\n");
+    }
     dds_run_postdump(aTHX_ ctx);
     if (gimme == G_VOID && !ctx->printer) {
         SV *args[2];

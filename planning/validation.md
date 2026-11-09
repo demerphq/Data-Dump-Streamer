@@ -29,6 +29,10 @@ installation is setup, not evidence that DDS itself passes.
 
 Local checks use Perl 5.22.4, 5.44.0, and 5.45.4 with the refcounted
 stack. The full stable-series matrix and threaded build run in CI only.
+XPerl class support additionally uses isolated builds of installed XPerl
+5.45.5 with ordinary and refcounted stacks. Its tests skip on interpreters
+without the snapshot builtins. Local XPerl checks do not replace stable
+Perl CI or change the historical compatibility probe policy.
 A 32-bit build has not been exercised locally. Keep correctness and
 performance builds distinct: debug instrumentation changes timing.
 

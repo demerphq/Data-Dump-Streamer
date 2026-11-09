@@ -142,9 +142,12 @@ dds_candidate(pTHX_ SV *sv)
 SV *
 dds_class(pTHX_ SV *sv)
 {
+    SV *name;
     if (!SvOBJECT(sv) || !SvSTASH(sv))
         return &PL_sv_undef;
-    return DDS_TEMP(newSVpv(HvNAME_get(SvSTASH(sv)), 0));
+    name = DDS_TEMP(newSVpv(HvNAME_get(SvSTASH(sv)), 0));
+    if (HvNAMEUTF8(SvSTASH(sv))) SvUTF8_on(name);
+    return name;
 }
 
 void
@@ -171,10 +174,12 @@ dds_clear_emission(pTHX_ dds_ctx *ctx)
             SvREFCNT_dec(fix->class_name);
             SvREFCNT_dec(fix->args);
             SvREFCNT_dec(fix->glob);
+            SvREFCNT_dec(fix->path);
             Safefree(fix);
         }
     }
     ctx->fix_tail = NULL;
+    ctx->pending_aliases = 0;
     while ((mark = ctx->marks)) {
         ctx->marks = mark->next;
         Safefree(mark);
@@ -186,6 +191,7 @@ dds_clear_emission(pTHX_ dds_ctx *ctx)
                 node->slot.done = node->ref.done = NULL;
                 node->glob_dumped = FALSE;
                 node->postop_queued = FALSE;
+                node->class_restored = FALSE;
             }
         }
     SvREFCNT_dec(ctx->out);
@@ -215,12 +221,17 @@ dds_clear_catalogue(pTHX_ dds_ctx *ctx)
                 SvREFCNT_dec(node->proxy);
                 SvREFCNT_dec(node->thaw);
                 SvREFCNT_dec(node->postop);
+                SvREFCNT_dec(node->class_fields);
+                SvREFCNT_dec(node->class_fields_name);
+                SvREFCNT_dec(node->class_package);
                 Safefree(node);
                 node = next;
             }
             ctx->table.buckets[i] = NULL;
         }
     ctx->table.count = 0;
+    ctx->class_head = ctx->class_tail = NULL;
+    ctx->class_serial = 0;
     for (i = 0; i < ctx->queue_count; i++)
         SvREFCNT_dec(ctx->queue[i].name);
     ctx->queue_head = ctx->queue_count = 0;

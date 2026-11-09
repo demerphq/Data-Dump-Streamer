@@ -13,6 +13,10 @@ analysis and Perl source emission use a mandatory XS engine. Construction, optio
 Perl supplies loading/export glue and integration with B::Deparse,
 PadWalker, and the optional compression modules.
 
+On XPerl with class snapshot helpers, native `class` objects preserve their
+fields and ordinary blessed payloads. Reconstruction requires the class
+definitions and XPerl helpers to be available and bypasses constructors.
+
 ## DEPENDENCIES
 
 Module::Build is required to configure and build the distribution. Runtime

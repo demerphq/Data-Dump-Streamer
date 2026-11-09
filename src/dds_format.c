@@ -450,12 +450,12 @@ dds_keys(pTHX_ dds_ctx *ctx, HV *hv, I32 pass, SV **thaw)
          * avoids disturbing a caller's each(), including its lazy deletion. */
         if (tied) { if (!(he = hv_iternext(hv))) break; }
         else {
-            while (!cursor && bucket <= HvMAX(hv)) {
-                if (HvARRAY(hv)) cursor = HvARRAY(hv)[bucket];
+            while (!cursor && bucket < DDS_HASH_LIMIT(hv)) {
+                cursor = DDS_HASH_FIRST(hv, bucket);
                 bucket++;
             }
             if (!cursor) break;
-            he = cursor; cursor = HeNEXT(cursor);
+            he = cursor; cursor = DDS_HASH_NEXT(hv, cursor);
             if (HeVAL(he) == &PL_sv_placeholder) continue;
         }
         SV *key = DDS_TEMP(newSVsv(hv_iterkeysv(he)));
@@ -522,8 +522,8 @@ dds_hidden_keys(pTHX_ HV *hv)
     HE *he;
     UV bucket;
     if (HvARRAY(hv))
-        for (bucket = 0; bucket <= HvMAX(hv); bucket++)
-            for (he = HvARRAY(hv)[bucket]; he; he = HeNEXT(he))
+        for (bucket = 0; bucket < DDS_HASH_LIMIT(hv); bucket++)
+            for (he = DDS_HASH_FIRST(hv, bucket); he; he = DDS_HASH_NEXT(hv, he))
                 if (HeVAL(he) == &PL_sv_placeholder)
                     av_push(keys, newSVsv(hv_iterkeysv(he)));
     if (av_len(keys) > 0) sortsv(AvARRAY(keys), av_len(keys) + 1, Perl_sv_cmp);

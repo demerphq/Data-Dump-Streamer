@@ -56,3 +56,4 @@ src/dds_emit.c
 src/dds_engine.c
 src/dds_engine.h
 src/dds_format.c
+t/xperl_class.t
