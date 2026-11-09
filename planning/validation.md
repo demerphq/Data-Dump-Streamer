@@ -225,7 +225,8 @@ ignore policies, and key ordering. Option keys, named selectors and primary
 method registration now derive from one definition list. Aliases refer to
 named selectors.
 
-A separate reference-emitter refactor follows the build conversion.
+The larger split of dds_step_ref was initially deferred. The user then
+requested it before release; the completed refactor is documented below.
 
 The final follow-up passes 5000 tests each on stock Perl 5.22.4, 5.44.0,
 5.44.0 with ithreads, and RC-stack debug 5.45.4. XPerl 5.45.5 passes
@@ -309,6 +310,43 @@ component-version check. All interpreter suites and the distribution's
 installs report 3.00 and dump correctly. INSTALL.SKIP is retained because
 ExtUtils::Install uses it under MakeMaker. The final archive is
 Data-Dump-Streamer-3.00.tar.gz; versioned logs are /tmp/dds-mm-300-*.log.
+
+## Reference emitter phases before 3.00
+
+The MakeMaker/3.00 checkpoint is committed at 3f3c7bd. Its CI runs
+42698099758 and 42698109265 pass every stable Perl from 5.18 through
+5.44, threaded 5.44 and development RC-stack Perl.
+
+The reference step now coordinates focused helpers for proxy resolution,
+canonical-role selection, existing/deferred reference emission, construction
+setup, payload emission and completion. A stack-local dds_ref_value borrows
+source/proxy SVs and stable catalogue metadata only during the initial
+step. Suspended traversal uses the existing frame ownership, flags and
+completion marks. No input refcounts, fixup order or catalogue semantics
+change. Compound statements in the extracted phases are expanded for
+readability, and the old continuation goto is removed.
+
+Full suites pass 5009 tests on Perl 5.22.4, unthreaded/threaded 5.44.0
+and RC-stack debug Perl, and 5182 on XPerl RC. The 99 freezer/callback
+assertions pass under Valgrind on RC-stack debug Perl with
+PERL_DESTRUCT_LEVEL=2 and an empty diagnostic log. Native syntax checking
+with gcc -Wall -Wextra passes. Logs: /tmp/dds-refactor-ref-*.log and
+/tmp/dds-refactor-valgrind{,-test}.log.
+
+A deterministic 1000-graph differential probe mixes sharing, cycles, weak
+edges, scalar references, dualvars, Unicode, regexps, freezers and layout
+options. Its emitted-byte hash matches the committed checkpoint:
+9a789d7f48267f2264920b794a6b73da85b25e7de5644f33613fcebade4e8a0a.
+All reference-emitter string literals also retain their values and order.
+The disposable probe is /tmp/dds-refactor-differential.pl.
+
+On the same nondebug Perl 5.44, the wide 100000-record fixture emits the
+same bytes and measures 0.600 seconds before and 0.616 after, with about
+23 MiB RSS growth in both. Depth-1000 output hashes match with and without
+callbacks, with matching RSS growth. These are host-specific observations,
+not performance guarantees.
+Five alternating depth-1000 callback samples have a median of 0.030
+seconds both before and after this refactor on the same host.
 
 ## DDS alias review follow-up
 

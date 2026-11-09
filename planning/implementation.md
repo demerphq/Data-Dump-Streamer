@@ -230,3 +230,12 @@ preserves object identity and bypasses constructors. Field snapshots leave
 scope after fixups. Explicit freezer replacements retain precedence.
 The public HvENTRY_* traversal macros adapt key collection and hidden-key
 collection to XPerl's compact hashes without disturbing each() state.
+
+## Reference emitter readability follow-up
+
+Completed the requested pre-release split of dds_step_ref. Resolution and
+canonical selection operate on borrowed step-local state; construction
+and completion share the existing frame fields across child traversal.
+The coordinator handles initial dispatch and scalar-reference completion
+without restoring a second set of local continuation variables. Existing
+ownership and generated statement order are preserved.

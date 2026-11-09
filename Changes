@@ -5,8 +5,9 @@ Keep breadth-first canonical names and sparse identity tracking, followed
 by depth-first output and typed fixups. Move constructors, options,
 dumping entry points, and callback dispatch into XS as well. Remove the
 Perl printer classes, duplicate sorters, and obsolete compatibility shims.
-Use heap frames for deep graphs and protect borrowed values when user
-callbacks can run.
+Split reference emission into focused resolution, construction and
+completion helpers. Use heap frames for deep graphs and protect borrowed
+values when user callbacks can run.
 
 Use ExtUtils::MakeMaker for configuration, compilation, testing and
 installation. Preserve DDS/NODDS alias selection and native header

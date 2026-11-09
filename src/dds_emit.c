@@ -796,78 +796,101 @@ dds_run_postdump(pTHX_ dds_ctx *ctx)
     }
 }
 
-static bool
-dds_step_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f)
-{
-    SV *rv = f->sv, *name = f->name;
-    UV depth = f->depth;
-    dds_mark *mark = f->mark;
-    IV indent = f->indent;
-    bool add_do = f->is_ref;
-    SV *target, *class_name;
+/* Resolution borrows source/proxy values and catalogue records. This state
+ * lives only during the initial step. Continuations retain their owned
+ * strings and borrowed stable metadata in the emission frame. */
+typedef struct {
+    SV *rv, *target, *class_name, *thaw;
     dds_node *node;
     dds_role *role;
-    bool overloaded, add_bless, add_lock, fix_lock = FALSE;
-    AV *hidden = NULL;
-    SV *thaw = NULL;
-    bool inline_thaw = FALSE, function_thaw = FALSE;
-    bool replacement = FALSE;
+    dds_mark *mark;
+    bool replacement;
+} dds_ref_value;
+
+static bool
+dds_resolve_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f, dds_ref_value *value)
+{
     UV proxy_limit = 0;
-    if (f->stage != DDS_STAGE_INITIAL) {
-        class_name = f->class_name;
-        node = f->node; role = f->role;
-        overloaded = f->overloaded; add_bless = f->add_bless;
-        add_lock = f->add_lock; fix_lock = f->fix_lock; hidden = f->hidden;
-        thaw = f->thaw;
-        inline_thaw = f->inline_thaw; function_thaw = f->function_thaw;
-        if (f->stage == DDS_STAGE_SCALAR_REF && f->result.deferred) role->done = f->result.deferred;
-        goto child_done;
-    }
-    target = SvRV(rv);
+    Zero(value, 1, dds_ref_value);
+    value->rv = f->sv;
+    value->mark = f->mark;
+    value->target = SvRV(value->rv);
     while (1) {
-        bool force = replacement;
-        if (dds_candidate(aTHX_ rv)) {
-            dds_node *slot = dds_find(aTHX_ ctx, rv, FALSE);
+        bool force = value->replacement;
+        if (dds_candidate(aTHX_ value->rv)) {
+            dds_node *slot = dds_find(aTHX_ ctx, value->rv, FALSE);
             force = force || (slot && slot->slot.original);
         }
-        node = force || dds_candidate(aTHX_ target) || SvOBJECT(target) || SvREADONLY(target)
-               ? dds_find(aTHX_ ctx, target, FALSE) : NULL;
-        if (node && node->ignored) {
-            (void)dds_emit_ignored(aTHX_ ctx, rv, target, TRUE);
-            return TRUE;
+        value->node = force || dds_candidate(aTHX_ value->target)
+            || SvOBJECT(value->target) || SvREADONLY(value->target)
+            ? dds_find(aTHX_ ctx, value->target, FALSE) : NULL;
+        if (value->node && value->node->ignored) {
+            (void)dds_emit_ignored(aTHX_ ctx, value->rv, value->target, TRUE);
+            return FALSE;
         }
-        if (node && (!node->proxy || SvROK(node->proxy)))
-            dds_queue_postdump(aTHX_ ctx, node, target);
-        if (node && node->proxy) {
-            if (!SvROK(node->proxy)) { dds_write(aTHX_ ctx, node->proxy); return TRUE; }
-            thaw = node->thaw;
-            rv = node->proxy; target = SvRV(rv);
-            replacement = TRUE;
-            if (thaw && SvTRUE(thaw) && !strnEQ(DDS_PV(thaw), "->", 2))
-                mark = dds_new_mark(aTHX_ ctx);
+        if (value->node && (!value->node->proxy || SvROK(value->node->proxy)))
+            dds_queue_postdump(aTHX_ ctx, value->node, value->target);
+        if (value->node && value->node->proxy) {
+            if (!SvROK(value->node->proxy)) {
+                dds_write(aTHX_ ctx, value->node->proxy);
+                return FALSE;
+            }
+            value->thaw = value->node->thaw;
+            value->rv = value->node->proxy;
+            value->target = SvRV(value->rv);
+            value->replacement = TRUE;
+            if (value->thaw && SvTRUE(value->thaw) && !strnEQ(DDS_PV(value->thaw), "->", 2))
+                value->mark = dds_new_mark(aTHX_ ctx);
             if (++proxy_limit > 100) croak("Cyclic freezer replacement");
             continue;
         }
         break;
     }
-    if (dds_emit_ignored(aTHX_ ctx, rv, target, FALSE)) return TRUE;
-    class_name = dds_class(aTHX_ target);
-    if (dds_is_regexp(aTHX_ target) && SvOK(class_name) && strEQ(DDS_PV(class_name), "Regexp"))
-        class_name = &PL_sv_undef;
-    if (!node) {
-        if (replacement || dds_candidate(aTHX_ target) || SvREADONLY(target) || SvTYPE(target) == SVt_PVGV) {
-            node = dds_find(aTHX_ ctx, target, TRUE);
-            if (!node->ref.present) {
-                node->ref.present = TRUE; node->ref.name = newSVsv(name); node->ref.depth = depth;
+    if (dds_emit_ignored(aTHX_ ctx, value->rv, value->target, FALSE)) return FALSE;
+    return TRUE;
+}
+
+static void
+dds_select_ref_role(pTHX_ dds_ctx *ctx, struct dds_frame *f, dds_ref_value *value)
+{
+    SV *name = f->name;
+    UV depth = f->depth;
+    value->class_name = dds_class(aTHX_ value->target);
+    if (dds_is_regexp(aTHX_ value->target) && SvOK(value->class_name)
+        && strEQ(DDS_PV(value->class_name), "Regexp"))
+        value->class_name = &PL_sv_undef;
+    if (!value->node) {
+        if (value->replacement || dds_candidate(aTHX_ value->target)
+            || SvREADONLY(value->target) || SvTYPE(value->target) == SVt_PVGV) {
+            value->node = dds_find(aTHX_ ctx, value->target, TRUE);
+            if (!value->node->ref.present) {
+                value->node->ref.present = TRUE;
+                value->node->ref.name = newSVsv(name);
+                value->node->ref.depth = depth;
             }
         }
         else {
-            f->temporary.address = PTR2UV(target);
-            f->temporary.ref.name = name; f->temporary.ref.depth = depth; node = &f->temporary;
+            f->temporary.address = PTR2UV(value->target);
+            f->temporary.ref.name = name;
+            f->temporary.ref.depth = depth;
+            value->node = &f->temporary;
         }
     }
-    role = &node->ref;
-    if (!role->name) { role->name = newSVsv(name); role->depth = depth; role->present = TRUE; }
+    value->role = &value->node->ref;
+    if (!value->role->name) {
+        value->role->name = newSVsv(name);
+        value->role->depth = depth;
+        value->role->present = TRUE;
+    }
+}
+
+static bool
+dds_emit_ref_use(pTHX_ dds_ctx *ctx, struct dds_frame *f, dds_ref_value *value)
+{
+    SV *name = f->name, *target = value->target, *class_name = value->class_name;
+    dds_node *node = value->node;
+    dds_role *role = value->role;
+    bool add_do = f->is_ref;
     if (role->done && role->done->ready) {
         SV *text;
         if (strchr("@%&", DDS_PV(role->name)[0])) {
@@ -879,7 +902,8 @@ dds_step_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f)
             text = dds_ref_expression(aTHX_ ctx, role->name, class_name);
         }
         else text = role->name;
-        dds_write(aTHX_ ctx, text); ctx->column += sv_len_utf8(text);
+        dds_write(aTHX_ ctx, text);
+        ctx->column += sv_len_utf8(text);
         return TRUE;
     }
     /* Glob-slot analysis and deferred emission have different frame
@@ -887,13 +911,14 @@ dds_step_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f)
      * decides which occurrence is allowed to construct the referent. */
     if (role->done || (sv_cmp(role->name, name)
             && DDS_PV(name)[0] != '&' && DDS_PV(role->name)[0] != '&')) {
-        if (strchr("@%&", DDS_PV(role->name)[0]) && !ctx->style.declare)
-        {
+        if (strchr("@%&", DDS_PV(role->name)[0]) && !ctx->style.declare) {
             SV *text = dds_ref_expression(aTHX_ ctx, role->name, class_name);
-            dds_write(aTHX_ ctx, text); ctx->column += sv_len_utf8(text);
+            dds_write(aTHX_ ctx, text);
+            ctx->column += sv_len_utf8(text);
         }
         else if (!ctx->style.purity) {
-            dds_write(aTHX_ ctx, role->name); ctx->column += sv_len_utf8(role->name);
+            dds_write(aTHX_ ctx, role->name);
+            ctx->column += sv_len_utf8(role->name);
         }
         else {
             dds_fix *fix = dds_new_fix(aTHX_ DDS_FIX_REF, name, node);
@@ -901,16 +926,36 @@ dds_step_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f)
                 ? dds_quote(aTHX_ dds_concat(aTHX_ "V: ", role->name, ""), FALSE)
                 : DDS_TEMP(newSVpvs("'V'"));
             if (SvOK(class_name)) fix->class_name = newSVsv(class_name);
-            if (add_do) { dds_put(aTHX_ ctx, "do { my $v = "); ctx->column += 12; }
-            dds_write(aTHX_ ctx, text); ctx->column += sv_len_utf8(text);
             if (add_do) {
-                dds_write(aTHX_ ctx, ctx->style.space); dds_put(aTHX_ ctx, "}");
+                dds_put(aTHX_ ctx, "do { my $v = ");
+                ctx->column += 12;
+            }
+            dds_write(aTHX_ ctx, text);
+            ctx->column += sv_len_utf8(text);
+            if (add_do) {
+                dds_write(aTHX_ ctx, ctx->style.space);
+                dds_put(aTHX_ ctx, "}");
                 ctx->column += sv_len_utf8(ctx->style.space) + 1;
             }
             dds_add_fix(aTHX_ ctx, fix);
         }
         return TRUE;
     }
+    return FALSE;
+}
+
+static void
+dds_begin_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f, dds_ref_value *value)
+{
+    SV *rv = value->rv, *target = value->target;
+    SV *name = f->name, *class_name = value->class_name;
+    SV *thaw = value->thaw;
+    dds_node *node = value->node;
+    dds_role *role = value->role;
+    dds_mark *mark = value->mark;
+    AV *hidden = NULL;
+    bool overloaded, add_bless, add_lock, fix_lock = FALSE;
+    bool inline_thaw = FALSE, function_thaw = FALSE;
     role->done = mark;
     overloaded = dds_overloaded(aTHX_ rv);
     if (!thaw) thaw = node->thaw;
@@ -919,33 +964,58 @@ dds_step_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f)
         const char *p = SvPV(thaw, len);
         bool simple = TRUE;
         STRLEN i;
-        for (i = 0; i < len; i++) if (!isALNUMC_A(p[i]) && !strchr("_:>()-", p[i])) simple = FALSE;
+        for (i = 0; i < len; i++) {
+            if (!isALNUMC_A(p[i]) && !strchr("_:>()-", p[i])) simple = FALSE;
+        }
         inline_thaw = !node->class_fields && simple && strnEQ(p, "->", 2);
         function_thaw = simple && len >= 2 && strEQ(p + len - 2, "()");
         if (inline_thaw && function_thaw) {
             dds_write(aTHX_ ctx, DDS_TEMP(newSVpvn(p + 2, len - 4)));
-            dds_put(aTHX_ ctx, "("); dds_write(aTHX_ ctx, ctx->style.space);
+            dds_put(aTHX_ ctx, "(");
+            dds_write(aTHX_ ctx, ctx->style.space);
         }
     }
     add_lock = SvTYPE(target) == SVt_PVHV && SvREADONLY(target);
     if (add_lock) {
         hidden = dds_hidden_keys(aTHX_ (HV *)target);
-        if (DDS_PV(name)[0] != '$') { fix_lock = TRUE; add_lock = FALSE; }
-        else { dds_put(aTHX_ ctx, av_len(hidden) >= 0 ? "lock_ref_keys_plus(" : "lock_ref_keys("); dds_write(aTHX_ ctx, ctx->style.space); }
+        if (DDS_PV(name)[0] != '$') {
+            fix_lock = TRUE;
+            add_lock = FALSE;
+        }
+        else {
+            dds_put(aTHX_ ctx, av_len(hidden) >= 0 ? "lock_ref_keys_plus(" : "lock_ref_keys(");
+            dds_write(aTHX_ ctx, ctx->style.space);
+        }
     }
     add_bless = SvOK(class_name) && !strchr("@%&", DDS_PV(name)[0]);
     if (add_bless && !overloaded) {
-        STRLEN len; const char *p = SvPV(ctx->style.bless, len);
+        STRLEN len;
+        const char *p = SvPV(ctx->style.bless, len);
         dds_write(aTHX_ ctx, DDS_TEMP(newSVpvn(p, len ? len - 1 : 0)));
         dds_write(aTHX_ ctx, ctx->style.space);
     }
     f->class_name = SvREFCNT_inc(class_name);
-    f->node = node; f->role = role;
-    f->overloaded = overloaded; f->add_bless = add_bless;
-    f->add_lock = add_lock; f->fix_lock = fix_lock;
+    f->node = node;
+    f->role = role;
+    f->overloaded = overloaded;
+    f->add_bless = add_bless;
+    f->add_lock = add_lock;
+    f->fix_lock = fix_lock;
     f->hidden = (AV *)SvREFCNT_inc((SV *)hidden);
     f->thaw = thaw;
-    f->inline_thaw = inline_thaw; f->function_thaw = function_thaw;
+    f->inline_thaw = inline_thaw;
+    f->function_thaw = function_thaw;
+}
+
+static bool
+dds_emit_ref_value(pTHX_ dds_ctx *ctx, struct dds_frame *f, dds_ref_value *value)
+{
+    SV *rv = value->rv, *target = value->target;
+    SV *name = f->name, *class_name = f->class_name;
+    dds_node *node = f->node;
+    dds_mark *mark = value->mark;
+    UV depth = f->depth;
+    IV indent = f->indent;
     ctx->do_nl = TRUE;
     if (dds_is_regexp(aTHX_ target))
         dds_write(aTHX_ ctx, dds_regex(aTHX_ ctx, rv));
@@ -958,7 +1028,10 @@ dds_step_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f)
     }
     else if (SvTYPE(target) == SVt_PVCV || SvTYPE(target) == SVt_PVFM) {
         SV *args[4], *code;
-        args[0] = rv; args[1] = name; args[2] = DDS_TEMP(newSViv(indent)); args[3] = class_name;
+        args[0] = rv;
+        args[1] = name;
+        args[2] = DDS_TEMP(newSViv(indent));
+        args[3] = class_name;
         code = dds_call(aTHX_ ctx, SvTYPE(target) == SVt_PVCV ? "_xs_code_text" : "_xs_format_text",
                         ctx->owner, G_SCALAR, 4, args);
         dds_write(aTHX_ ctx, code);
@@ -974,43 +1047,83 @@ dds_step_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f)
         return FALSE;
     }
     else croak("Cannot emit Perl SV type %d", (int)SvTYPE(target));
-  child_done:
-    if (add_bless) {
-        if (!overloaded) {
-            STRLEN len; const char *p = SvPV(ctx->style.bless, len);
-            dds_put(aTHX_ ctx, ","); dds_write(aTHX_ ctx, ctx->style.space);
-            dds_write(aTHX_ ctx, dds_quote(aTHX_ class_name, FALSE)); dds_write(aTHX_ ctx, ctx->style.space);
+    return TRUE;
+}
+
+static void
+dds_finish_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f)
+{
+    SV *class_name = f->class_name, *thaw = f->thaw;
+    dds_node *node = f->node;
+    AV *hidden = f->hidden;
+    if (f->add_bless) {
+        if (!f->overloaded) {
+            STRLEN len;
+            const char *p = SvPV(ctx->style.bless, len);
+            dds_put(aTHX_ ctx, ",");
+            dds_write(aTHX_ ctx, ctx->style.space);
+            dds_write(aTHX_ ctx, dds_quote(aTHX_ class_name, FALSE));
+            dds_write(aTHX_ ctx, ctx->style.space);
             if (len) dds_write(aTHX_ ctx, DDS_TEMP(newSVpvn(p + len - 1, 1)));
         }
         else {
             dds_fix *fix = dds_new_fix(aTHX_ DDS_FIX_BLESS, NULL, node);
-            fix->text = newSVsv(class_name); dds_add_fix(aTHX_ ctx, fix);
+            fix->text = newSVsv(class_name);
+            dds_add_fix(aTHX_ ctx, fix);
         }
     }
-    if (fix_lock && !SvOK(class_name)) {
+    if (f->fix_lock && !SvOK(class_name)) {
         dds_fix *fix = dds_new_fix(aTHX_ DDS_FIX_LOCK, NULL, node);
-        fix->args = (AV *)SvREFCNT_inc((SV *)hidden); dds_add_fix(aTHX_ ctx, fix);
+        fix->args = (AV *)SvREFCNT_inc((SV *)hidden);
+        dds_add_fix(aTHX_ ctx, fix);
     }
-    if (add_lock) {
+    if (f->add_lock) {
         SSize_t i;
         for (i = 0; i <= av_len(hidden); i++) {
-            dds_put(aTHX_ ctx, ","); dds_write(aTHX_ ctx, ctx->style.space);
+            dds_put(aTHX_ ctx, ",");
+            dds_write(aTHX_ ctx, ctx->style.space);
             dds_write(aTHX_ ctx, dds_quote(aTHX_ *av_fetch(hidden, i, 0), FALSE));
         }
-        dds_write(aTHX_ ctx, ctx->style.space); dds_put(aTHX_ ctx, ")");
+        dds_write(aTHX_ ctx, ctx->style.space);
+        dds_put(aTHX_ ctx, ")");
     }
     if (thaw && SvTRUE(thaw)) {
-        if (inline_thaw) {
-            if (function_thaw) { dds_write(aTHX_ ctx, ctx->style.space); dds_put(aTHX_ ctx, ")"); }
-            else { dds_put(aTHX_ ctx, "->"); dds_put(aTHX_ ctx, DDS_PV(thaw) + 2); dds_put(aTHX_ ctx, "()"); }
+        if (f->inline_thaw) {
+            if (f->function_thaw) {
+                dds_write(aTHX_ ctx, ctx->style.space);
+                dds_put(aTHX_ ctx, ")");
+            }
+            else {
+                dds_put(aTHX_ ctx, "->");
+                dds_put(aTHX_ ctx, DDS_PV(thaw) + 2);
+                dds_put(aTHX_ ctx, "()");
+            }
         }
         else {
             dds_fix *fix = dds_new_fix(aTHX_ DDS_FIX_THAW, NULL, node);
-            fix->text = newSVsv(thaw); dds_add_fix(aTHX_ ctx, fix);
+            fix->text = newSVsv(thaw);
+            dds_add_fix(aTHX_ ctx, fix);
         }
     }
     ctx->do_nl = TRUE;
     Zero(&f->result, 1, dds_result);
+}
+
+static bool
+dds_step_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f)
+{
+    if (f->stage == DDS_STAGE_INITIAL) {
+        dds_ref_value value;
+        if (!dds_resolve_ref(aTHX_ ctx, f, &value)) return TRUE;
+        dds_select_ref_role(aTHX_ ctx, f, &value);
+        if (dds_emit_ref_use(aTHX_ ctx, f, &value)) return TRUE;
+        dds_begin_ref(aTHX_ ctx, f, &value);
+        if (!dds_emit_ref_value(aTHX_ ctx, f, &value)) return FALSE;
+    }
+    else if (f->stage == DDS_STAGE_SCALAR_REF && f->result.deferred) {
+        f->role->done = f->result.deferred;
+    }
+    dds_finish_ref(aTHX_ ctx, f);
     return TRUE;
 }
 
