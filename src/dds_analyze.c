@@ -296,6 +296,294 @@ static void dds_collect_lexicals(pTHX_ dds_ctx *ctx, SV *target, HV *lexrefs, HV
     }
 }
 
+static void dds_analyze_array(pTHX_ dds_ctx *ctx, SV *target, UV depth, SV *name)
+{
+    SSize_t k, last;
+
+    if (SvTIED_mg(target, PERL_MAGIC_tied))
+        dds_callback_guard(aTHX_ ctx);
+    last = av_len((AV *)target);
+    for (k = 0; k <= last; k++) {
+        SV **value = av_fetch((AV *)target, k, 0);
+
+        if (!value)
+            continue;
+
+        ctx->visits++;
+        if (!dds_candidate(aTHX_ * value) && !SvROK(*value) && !SvGMAGICAL(*value) &&
+            SvTYPE(*value) != SVt_PVGV)
+            continue;
+        dds_analyze_child(aTHX_ ctx, *value, depth, name, '[', NULL, k);
+    }
+}
+
+static void dds_analyze_hash(pTHX_ dds_ctx *ctx, dds_node *node, SV *target, UV depth, SV *name)
+{
+    SV *thaw = NULL;
+    AV *keys = dds_keys(aTHX_ ctx, (HV *)target, 0, &thaw);
+    SSize_t k;
+    UV max = 0, sum = 0, count = 0;
+
+    if (thaw) {
+        if (!node)
+            node = dds_find(aTHX_ ctx, target, TRUE);
+        SvREFCNT_dec(node->thaw);
+        node->thaw = newSVsv(thaw);
+    }
+
+    for (k = 0; k <= av_len(keys); k++) {
+        SV **key = av_fetch(keys, k, 0);
+        HE *he;
+        SV *value;
+
+        if (!key || !SvOK(*key))
+            break;
+        he = hv_fetch_ent((HV *)target, *key, 0, 0);
+        value = he ? HeVAL(he) : &PL_sv_undef;
+        ctx->visits++;
+
+        if (ctx->style.indentkeys) {
+            STRLEN width;
+
+            ENTER;
+            SAVETMPS;
+            width = sv_len_utf8(dds_quote(aTHX_ * key, TRUE));
+            sum += width;
+            if (max < width)
+                max = width;
+            FREETMPS;
+            LEAVE;
+        }
+
+        count++;
+        if (!dds_candidate(aTHX_ value) && !SvROK(value) && !SvGMAGICAL(value) &&
+            SvTYPE(value) != SVt_PVGV)
+            continue;
+        dds_analyze_child(aTHX_ ctx, value, depth, name, '{', *key, 0);
+    }
+
+    if (node) {
+        NV avg = count ? (NV)sum / count : 0;
+
+        node->key_width = max > 8 && (2.0 / 3.0 * max) > avg ? (UV)(0.5 + avg) : max;
+        node->key_count = count;
+    }
+}
+
+/* Each work item owns a temporary scope; callbacks retain only live
+ * traversal work before they can mutate the graph or invoke Perl. */
+static void dds_analyze_entry(pTHX_ dds_ctx *ctx, UV position, UV pass, HV *lexrefs, HV *lexnames,
+                              HV *used_names)
+{
+    dds_queue_entry entry = ctx->queue[position];
+    dds_active active;
+    SV *target, *name = entry.name;
+    UV depth = entry.depth;
+    dds_node *node = NULL;
+    bool replacement = FALSE;
+
+    ENTER;
+    SAVETMPS;
+
+    /* Transfer this queue entry's name to the work-item scope.
+     * Nodes and newly queued entries take their own copies. */
+    ctx->queue[position].name = NULL;
+    DDS_TEMP(name);
+    Zero(&active, 1, dds_active);
+    active.sv = entry.sv;
+    ctx->active = &active;
+    ctx->visits++;
+
+    if (strnEQ(DDS_PV(name), "*DB::args", 9) && (DDS_PV(name)[9] == '\0' || DDS_PV(name)[9] == '{'))
+        goto entry_done;
+
+    if (SvGMAGICAL(entry.sv)) {
+        av_push(ctx->keepalive, SvREFCNT_inc(entry.sv));
+        dds_callback_guard(aTHX_ ctx);
+        mg_get(entry.sv);
+    }
+
+    if (!entry.direct && !SvROK(entry.sv))
+        goto entry_done;
+    target = entry.direct ? entry.sv : SvRV(entry.sv);
+    if (dds_ignored(aTHX_ ctx, target))
+        goto entry_done;
+
+    /* Resolve a freezer once per object, then analyze its proxy. */
+    if (SvOBJECT(target)) {
+        SV *args[1], *frozen;
+
+        node = dds_find(aTHX_ ctx, target, TRUE);
+        if (node->frozen)
+            goto entry_done;
+        node->frozen = TRUE;
+        args[0] = entry.direct ? DDS_TEMP(newRV_inc(target)) : entry.sv;
+        av_push(ctx->keepalive, SvREFCNT_inc(target));
+        frozen = dds_freeze(aTHX_ ctx, args[0]);
+        if (SvROK(frozen)) {
+            AV *values = (AV *)SvRV(frozen);
+            SV **proxy = av_fetch(values, 0, 0);
+            SV **thaw = av_fetch(values, 1, 0);
+            SV **postop = av_fetch(values, 2, 0);
+
+            if (thaw && SvTRUE(*thaw))
+                node->thaw = newSVsv(*thaw);
+            if (postop && SvTRUE(*postop))
+                node->postop = newSVsv(*postop);
+
+            if (proxy && SvOK(*proxy) && !SvROK(*proxy) && !SvTRUE(*proxy)) {
+                node->ignored = TRUE;
+                goto entry_done;
+            }
+
+            if (proxy && SvOK(*proxy) && (!SvROK(*proxy) || SvRV(*proxy) != target)) {
+                node->proxy = newSVsv(*proxy);
+                if (!SvROK(*proxy))
+                    goto entry_done;
+                target = SvRV(*proxy);
+                replacement = TRUE;
+                node = NULL;
+            }
+        }
+    }
+
+    /* Only possible sharing needs a persistent catalogue entry.
+     * A unique ordinary referent can expand without one. */
+    if (!node) {
+        /* One owned proxy RV can represent several occurrences
+         * of the original object, even with referent count one. */
+        bool force = replacement || entry.direct || strchr("@%&", DDS_PV(name)[0]) != NULL;
+
+        if (!force && !entry.direct && dds_candidate(aTHX_ entry.sv)) {
+            dds_node *slot = dds_find(aTHX_ ctx, entry.sv, FALSE);
+
+            force = slot && slot->slot.original;
+        }
+        if (force || dds_candidate(aTHX_ target))
+            node = dds_find(aTHX_ ctx, target, TRUE);
+    }
+
+    if (node) {
+        dds_role *role = &node->ref;
+
+        if (role->present) {
+            role->encounters++;
+            ctx->repeats++;
+            goto entry_done;
+        }
+
+        role->present = TRUE;
+        role->name = newSVsv(name);
+        role->depth = depth;
+        role->count = SvREFCNT(target) + dds_weak_count(aTHX_ target);
+        role->encounters = 1;
+        node->expanded = TRUE;
+    }
+
+#if defined(class_object_to_hash) && defined(PERL_MAGIC_class_storage)
+    if (node)
+        dds_analyze_class(aTHX_ ctx, node, target, depth);
+#endif
+
+    /* Child slots are one level deeper; their referents add another. */
+    if (SvTYPE(target) == SVt_PVAV) {
+        dds_analyze_array(aTHX_ ctx, target, depth, name);
+    } else if (SvTYPE(target) == SVt_PVHV) {
+        dds_analyze_hash(aTHX_ ctx, node, target, depth, name);
+    } else if (SvTYPE(target) == SVt_PVCV) {
+        if (!pass)
+            dds_collect_lexicals(aTHX_ ctx, target, lexrefs, lexnames, used_names);
+    } else if (SvTYPE(target) <= SVt_PVMG || SvTYPE(target) == SVt_PVGV) {
+        dds_analyze_child(aTHX_ ctx, target, depth, name, '$', NULL, 0);
+    }
+
+entry_done:
+    ctx->active = NULL;
+    FREETMPS;
+    LEAVE;
+}
+
+/* Match discovered closure values to roots, then prepend any missing
+ * roots in lexical order. Return whether names or root membership changed. */
+static bool dds_add_lexical_roots(pTHX_ dds_ctx *ctx, HV *lexrefs, HV *lexnames)
+{
+    AV *add = (AV *)DDS_TEMP((SV *)newAV());
+    AV *unames = dds_array(aTHX_ ctx->object, "unames", TRUE);
+    HE *he;
+    UV i;
+    bool again = FALSE;
+
+    hv_iterinit(lexrefs);
+    while ((he = hv_iternext(lexrefs))) {
+        SV *address = hv_iterkeysv(he), *rv = HeVAL(he);
+        SV *lexname = dds_hget_sv(aTHX_ lexnames, address);
+        bool found = FALSE;
+
+        hv_store_ent(ctx->lexical_names, address, newSVsv(lexname), 0);
+        for (i = 0; i < ctx->root_count; i++) {
+            if (ctx->roots[i].sv == SvRV(rv)) {
+                SV **user = av_fetch(unames, i, 0);
+
+                found = TRUE;
+                if (!user || !SvTRUE(*user)) {
+                    const char *p = DDS_PV(lexname);
+                    SV *n = DDS_TEMP(newSVpvf("%s%s", p[0] == '$' ? "" : "*", p + 1));
+
+                    av_store(unames, i, newSVsv(n));
+                    again = TRUE;
+                } else {
+                    const char *p = DDS_PV(*user), *old = DDS_PV(lexname);
+                    SV *renamed = DDS_TEMP(newSVpvf("%c%s", old[0], p[0] == '*' ? p + 1 : p));
+
+                    hv_store_ent(lexnames, address, newSVsv(renamed), 0);
+                }
+                break;
+            }
+        }
+        if (!found)
+            av_push(add, newSVsv(lexname));
+    }
+
+    if (av_len(add) >= 0) {
+        UV n = av_len(add) + 1, old_count = ctx->root_count;
+
+        sortsv(AvARRAY(add), n, Perl_sv_cmp);
+        Renew(ctx->roots, old_count + n, dds_root);
+        Move(ctx->roots, ctx->roots + n, old_count, dds_root);
+        Zero(ctx->roots, n, dds_root);
+        av_unshift(unames, n);
+
+        for (i = 0; i < n; i++) {
+            SV *lexname = *av_fetch(add, i, 0), *rv = NULL;
+            const char *p = DDS_PV(lexname);
+
+            hv_iterinit(lexnames);
+            while ((he = hv_iternext(lexnames))) {
+                if (sv_cmp(HeVAL(he), lexname) == 0) {
+                    rv = dds_hget(aTHX_ lexrefs, DDS_PV(hv_iterkeysv(he)));
+                    break;
+                }
+            }
+
+            if (!rv || !SvROK(rv))
+                croak("Lost closure root");
+            if (SvTYPE(SvRV(rv)) == SVt_PVAV || SvTYPE(SvRV(rv)) == SVt_PVHV ||
+                SvTYPE(SvRV(rv)) == SVt_PVCV)
+                ctx->roots[i].sv = newSVsv(rv);
+            else
+                ctx->roots[i].sv = SvREFCNT_inc(SvRV(rv));
+            ctx->roots[i].count = SvREFCNT(ctx->roots[i].sv);
+            ctx->roots[i].lexical = TRUE;
+            av_store(unames, i, newSVpvf("%s%s", p[0] == '$' ? "" : "*", p + 1));
+        }
+
+        ctx->root_count = ctx->root_capacity = old_count + n;
+        again = TRUE;
+    }
+
+    return again;
+}
+
 void dds_analyze(pTHX_ dds_ctx *ctx)
 {
     UV pass = 0, i;
@@ -324,279 +612,15 @@ void dds_analyze(pTHX_ dds_ctx *ctx)
                 hv_store_ent(ctx->lexical_added, name, newSViv(1), 0);
         }
 
-        while (ctx->queue_head < ctx->queue_count) {
-            UV position = dds_dequeue(ctx);
-            dds_queue_entry entry = ctx->queue[position];
-            dds_active active;
-            SV *target, *name = entry.name;
-            UV depth = entry.depth;
-            dds_node *node = NULL;
-            bool replacement = FALSE;
-
-            ENTER;
-            SAVETMPS;
-
-            /* Transfer this queue entry's name to the work-item scope.
-             * Nodes and newly queued entries take their own copies. */
-            ctx->queue[position].name = NULL;
-            DDS_TEMP(name);
-            Zero(&active, 1, dds_active);
-            active.sv = entry.sv;
-            ctx->active = &active;
-            ctx->visits++;
-
-            if (strnEQ(DDS_PV(name), "*DB::args", 9) &&
-                (DDS_PV(name)[9] == '\0' || DDS_PV(name)[9] == '{'))
-                goto entry_done;
-
-            if (SvGMAGICAL(entry.sv)) {
-                av_push(ctx->keepalive, SvREFCNT_inc(entry.sv));
-                dds_callback_guard(aTHX_ ctx);
-                mg_get(entry.sv);
-            }
-
-            if (!entry.direct && !SvROK(entry.sv))
-                goto entry_done;
-            target = entry.direct ? entry.sv : SvRV(entry.sv);
-            if (dds_ignored(aTHX_ ctx, target))
-                goto entry_done;
-
-            /* Resolve a freezer once per object, then analyze its proxy. */
-            if (SvOBJECT(target)) {
-                SV *args[1], *frozen;
-
-                node = dds_find(aTHX_ ctx, target, TRUE);
-                if (node->frozen)
-                    goto entry_done;
-                node->frozen = TRUE;
-                args[0] = entry.direct ? DDS_TEMP(newRV_inc(target)) : entry.sv;
-                av_push(ctx->keepalive, SvREFCNT_inc(target));
-                frozen = dds_freeze(aTHX_ ctx, args[0]);
-                if (SvROK(frozen)) {
-                    AV *values = (AV *)SvRV(frozen);
-                    SV **proxy = av_fetch(values, 0, 0);
-                    SV **thaw = av_fetch(values, 1, 0);
-                    SV **postop = av_fetch(values, 2, 0);
-
-                    if (thaw && SvTRUE(*thaw))
-                        node->thaw = newSVsv(*thaw);
-                    if (postop && SvTRUE(*postop))
-                        node->postop = newSVsv(*postop);
-
-                    if (proxy && SvOK(*proxy) && !SvROK(*proxy) && !SvTRUE(*proxy)) {
-                        node->ignored = TRUE;
-                        goto entry_done;
-                    }
-
-                    if (proxy && SvOK(*proxy) && (!SvROK(*proxy) || SvRV(*proxy) != target)) {
-                        node->proxy = newSVsv(*proxy);
-                        if (!SvROK(*proxy))
-                            goto entry_done;
-                        target = SvRV(*proxy);
-                        replacement = TRUE;
-                        node = NULL;
-                    }
-                }
-            }
-
-            /* Only possible sharing needs a persistent catalogue entry.
-             * A unique ordinary referent can expand without one. */
-            if (!node) {
-                /* One owned proxy RV can represent several occurrences
-                 * of the original object, even with referent count one. */
-                bool force = replacement || entry.direct || strchr("@%&", DDS_PV(name)[0]) != NULL;
-
-                if (!force && !entry.direct && dds_candidate(aTHX_ entry.sv)) {
-                    dds_node *slot = dds_find(aTHX_ ctx, entry.sv, FALSE);
-
-                    force = slot && slot->slot.original;
-                }
-                if (force || dds_candidate(aTHX_ target))
-                    node = dds_find(aTHX_ ctx, target, TRUE);
-            }
-
-            if (node) {
-                dds_role *role = &node->ref;
-
-                if (role->present) {
-                    role->encounters++;
-                    ctx->repeats++;
-                    goto entry_done;
-                }
-
-                role->present = TRUE;
-                role->name = newSVsv(name);
-                role->depth = depth;
-                role->count = SvREFCNT(target) + dds_weak_count(aTHX_ target);
-                role->encounters = 1;
-                node->expanded = TRUE;
-            }
-
-#if defined(class_object_to_hash) && defined(PERL_MAGIC_class_storage)
-            if (node)
-                dds_analyze_class(aTHX_ ctx, node, target, depth);
-#endif
-
-            /* Child slots are one level deeper; their referents add another. */
-            if (SvTYPE(target) == SVt_PVAV) {
-                SSize_t k, last;
-
-                if (SvTIED_mg(target, PERL_MAGIC_tied))
-                    dds_callback_guard(aTHX_ ctx);
-                last = av_len((AV *)target);
-                for (k = 0; k <= last; k++) {
-                    SV **value = av_fetch((AV *)target, k, 0);
-
-                    if (!value)
-                        continue;
-
-                    ctx->visits++;
-                    if (!dds_candidate(aTHX_ * value) && !SvROK(*value) && !SvGMAGICAL(*value) &&
-                        SvTYPE(*value) != SVt_PVGV)
-                        continue;
-                    dds_analyze_child(aTHX_ ctx, *value, depth, name, '[', NULL, k);
-                }
-            } else if (SvTYPE(target) == SVt_PVHV) {
-                SV *thaw = NULL;
-                AV *keys = dds_keys(aTHX_ ctx, (HV *)target, 0, &thaw);
-                SSize_t k;
-                UV max = 0, sum = 0, count = 0;
-
-                if (thaw) {
-                    if (!node)
-                        node = dds_find(aTHX_ ctx, target, TRUE);
-                    SvREFCNT_dec(node->thaw);
-                    node->thaw = newSVsv(thaw);
-                }
-
-                for (k = 0; k <= av_len(keys); k++) {
-                    SV **key = av_fetch(keys, k, 0);
-                    HE *he;
-                    SV *value;
-
-                    if (!key || !SvOK(*key))
-                        break;
-                    he = hv_fetch_ent((HV *)target, *key, 0, 0);
-                    value = he ? HeVAL(he) : &PL_sv_undef;
-                    ctx->visits++;
-
-                    if (ctx->style.indentkeys) {
-                        STRLEN width;
-
-                        ENTER;
-                        SAVETMPS;
-                        width = sv_len_utf8(dds_quote(aTHX_ * key, TRUE));
-                        sum += width;
-                        if (max < width)
-                            max = width;
-                        FREETMPS;
-                        LEAVE;
-                    }
-
-                    count++;
-                    if (!dds_candidate(aTHX_ value) && !SvROK(value) && !SvGMAGICAL(value) &&
-                        SvTYPE(value) != SVt_PVGV)
-                        continue;
-                    dds_analyze_child(aTHX_ ctx, value, depth, name, '{', *key, 0);
-                }
-
-                if (node) {
-                    NV avg = count ? (NV)sum / count : 0;
-
-                    node->key_width = max > 8 && (2.0 / 3.0 * max) > avg ? (UV)(0.5 + avg) : max;
-                    node->key_count = count;
-                }
-            } else if (SvTYPE(target) == SVt_PVCV) {
-                if (!pass)
-                    dds_collect_lexicals(aTHX_ ctx, target, lexrefs, lexnames, used_names);
-            } else if (SvTYPE(target) <= SVt_PVMG || SvTYPE(target) == SVt_PVGV) {
-                dds_analyze_child(aTHX_ ctx, target, depth, name, '$', NULL, 0);
-            }
-
-        entry_done:
-            ctx->active = NULL;
-            FREETMPS;
-            LEAVE;
-        }
+        while (ctx->queue_head < ctx->queue_count)
+            dds_analyze_entry(aTHX_ ctx, dds_dequeue(ctx), pass, lexrefs, lexnames, used_names);
 
         ctx->active = NULL;
 
         /* Closure discovery may add roots or improve their names. Rebuild
          * the catalogue so those roots participate in minimum-depth naming. */
-        if (!pass && HvTOTALKEYS(lexrefs)) {
-            AV *add = (AV *)DDS_TEMP((SV *)newAV());
-            AV *unames = dds_array(aTHX_ ctx->object, "unames", TRUE);
-            HE *he;
-
-            hv_iterinit(lexrefs);
-            while ((he = hv_iternext(lexrefs))) {
-                SV *address = hv_iterkeysv(he), *rv = HeVAL(he);
-                SV *lexname = dds_hget_sv(aTHX_ lexnames, address);
-                bool found = FALSE;
-
-                hv_store_ent(ctx->lexical_names, address, newSVsv(lexname), 0);
-                for (i = 0; i < ctx->root_count; i++) {
-                    if (ctx->roots[i].sv == SvRV(rv)) {
-                        SV **user = av_fetch(unames, i, 0);
-
-                        found = TRUE;
-                        if (!user || !SvTRUE(*user)) {
-                            const char *p = DDS_PV(lexname);
-                            SV *n = DDS_TEMP(newSVpvf("%s%s", p[0] == '$' ? "" : "*", p + 1));
-
-                            av_store(unames, i, newSVsv(n));
-                            again = TRUE;
-                        } else {
-                            const char *p = DDS_PV(*user), *old = DDS_PV(lexname);
-                            SV *renamed =
-                                DDS_TEMP(newSVpvf("%c%s", old[0], p[0] == '*' ? p + 1 : p));
-
-                            hv_store_ent(lexnames, address, newSVsv(renamed), 0);
-                        }
-                        break;
-                    }
-                }
-                if (!found)
-                    av_push(add, newSVsv(lexname));
-            }
-
-            if (av_len(add) >= 0) {
-                UV n = av_len(add) + 1, old_count = ctx->root_count;
-
-                sortsv(AvARRAY(add), n, Perl_sv_cmp);
-                Renew(ctx->roots, old_count + n, dds_root);
-                Move(ctx->roots, ctx->roots + n, old_count, dds_root);
-                Zero(ctx->roots, n, dds_root);
-                av_unshift(unames, n);
-
-                for (i = 0; i < n; i++) {
-                    SV *lexname = *av_fetch(add, i, 0), *rv = NULL;
-                    const char *p = DDS_PV(lexname);
-
-                    hv_iterinit(lexnames);
-                    while ((he = hv_iternext(lexnames))) {
-                        if (sv_cmp(HeVAL(he), lexname) == 0) {
-                            rv = dds_hget(aTHX_ lexrefs, DDS_PV(hv_iterkeysv(he)));
-                            break;
-                        }
-                    }
-
-                    if (!rv || !SvROK(rv))
-                        croak("Lost closure root");
-                    if (SvTYPE(SvRV(rv)) == SVt_PVAV || SvTYPE(SvRV(rv)) == SVt_PVHV ||
-                        SvTYPE(SvRV(rv)) == SVt_PVCV)
-                        ctx->roots[i].sv = newSVsv(rv);
-                    else
-                        ctx->roots[i].sv = SvREFCNT_inc(SvRV(rv));
-                    ctx->roots[i].count = SvREFCNT(ctx->roots[i].sv);
-                    ctx->roots[i].lexical = TRUE;
-                    av_store(unames, i, newSVpvf("%s%s", p[0] == '$' ? "" : "*", p + 1));
-                }
-
-                ctx->root_count = ctx->root_capacity = old_count + n;
-                again = TRUE;
-            }
-        }
+        if (!pass && HvTOTALKEYS(lexrefs))
+            again = dds_add_lexical_roots(aTHX_ ctx, lexrefs, lexnames);
 
         pass++;
     } while (again && pass < 3);

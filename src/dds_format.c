@@ -273,7 +273,7 @@ SV *dds_child_name(pTHX_ SV *parent, char kind, SV *key, IV child_index)
     return out;
 }
 
-/* Keep generated names distinct while preserving the user's sigil choice. */
+/* Derive a scalar-slot name from an aggregate expression, preserving UTF-8. */
 SV *dds_clean_name(pTHX_ SV *name)
 {
     STRLEN len, i;
