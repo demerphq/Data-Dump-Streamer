@@ -31,7 +31,6 @@ extern "C" {
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
-#include "ppport.h"
 #include "dds_engine.h"
 #ifdef __cplusplus
 }
@@ -301,18 +300,37 @@ CODE:
             croak("Expected a code reference");
         cv = (CV *)SvRV(rv);
         if (!CvISXSUB(cv) && CvPADLIST(cv)) {
+#if PERL_VERSION >= 18
             PADLIST *padlist = CvPADLIST(cv);
             PADNAMELIST *names = PadlistNAMES(padlist);
             PAD *pad = PadlistARRAY(padlist)[CvDEPTH(cv) ? CvDEPTH(cv) : 1];
+#else
+            AV *padlist = (AV *)CvPADLIST(cv);
+            AV *names = (AV *)AvARRAY(padlist)[0];
+            AV *pad = (AV *)AvARRAY(padlist)[CvDEPTH(cv) ? CvDEPTH(cv) : 1];
+#endif
             SSize_t i;
+#if PERL_VERSION >= 18
             for (i = PadnamelistMAX(names); i >= 0; i--) {
                 PADNAME *name = PadnamelistARRAY(names)[i];
+#else
+            for (i = av_len(names); i >= 0; i--) {
+                SV *name = AvARRAY(names)[i];
+#endif
+#if PERL_VERSION >= 18
                 if (name && PadnamePV(name) && PadnameOUTER(name) && !PadnameIsOUR(name)) {
+#else
+                if (name && SvPOK(name) && SvFAKE(name) && !SvPAD_OUR(name)) {
+#endif
                     SV **value = av_fetch(pad, i, 0);
                     if (value && *value) {
                         SV *index = sv_2mortal(newSViv(i));
                         SV *ref = sv_2mortal(newRV_inc(*value));
+#if PERL_VERSION >= 18
                         hv_store(values, PadnamePV(name), PadnameUTF8(name) ? -(I32)PadnameLEN(name) : (I32)PadnameLEN(name), newSVsv(ref), 0);
+#else
+                        hv_store_ent(values, name, newSVsv(ref), 0);
+#endif
                         hv_store_ent(values, index, newSVsv(ref), 0);
                     }
                 }

@@ -572,10 +572,10 @@ dds_emit_ignored(pTHX_ dds_ctx *ctx, SV *rv, SV *target, bool forced)
     HV *ignore = dds_hash(aTHX_ style, "ignore", FALSE);
     SV *key = DDS_TEMP(newSVpvf("#%" UVuf, PTR2UV(target)));
     SV *class_name = dds_class(aTHX_ target);
-    bool ignored = forced || SvTRUE(dds_hget(aTHX_ ignore, DDS_PV(key)));
+    bool ignored = forced || SvTRUE(dds_hget_sv(aTHX_ ignore, key));
     if (SvOK(class_name)) {
         key = dds_concat(aTHX_ ".", class_name, "");
-        ignored = ignored || SvTRUE(dds_hget(aTHX_ ignore, DDS_PV(key)));
+        ignored = ignored || SvTRUE(dds_hget_sv(aTHX_ ignore, key));
     }
     if (ignored) {
         SV *text = DDS_TEMP(newSVpvs("Ignored Obj ["));
@@ -852,7 +852,7 @@ dds_step_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f)
     }
     if (dds_emit_ignored(aTHX_ ctx, rv, target, FALSE)) return TRUE;
     class_name = dds_class(aTHX_ target);
-    if (SvTYPE(target) == SVt_REGEXP && SvOK(class_name) && strEQ(DDS_PV(class_name), "Regexp"))
+    if (dds_is_regexp(aTHX_ target) && SvOK(class_name) && strEQ(DDS_PV(class_name), "Regexp"))
         class_name = &PL_sv_undef;
     if (!node) {
         if (replacement || dds_candidate(aTHX_ target) || SvREADONLY(target) || SvTYPE(target) == SVt_PVGV) {
@@ -947,8 +947,8 @@ dds_step_ref(pTHX_ dds_ctx *ctx, struct dds_frame *f)
     f->thaw = thaw;
     f->inline_thaw = inline_thaw; f->function_thaw = function_thaw;
     ctx->do_nl = TRUE;
-    if (SvTYPE(target) == SVt_REGEXP)
-        dds_write(aTHX_ ctx, dds_regex(aTHX_ rv));
+    if (dds_is_regexp(aTHX_ target))
+        dds_write(aTHX_ ctx, dds_regex(aTHX_ ctx, rv));
     else if (SvTYPE(target) == SVt_PVAV || SvTYPE(target) == SVt_PVHV) {
         f->stage = DDS_STAGE_CHILD;
         dds_push_frame(aTHX_ ctx, SvTYPE(target) == SVt_PVAV ? DDS_FRAME_ARRAY : DDS_FRAME_HASH,

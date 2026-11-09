@@ -1,3 +1,4 @@
+#define NEED_utf8_to_uvchr_buf
 #include "dds_engine.h"
 
 /* The public facade remains a blessed hash for API compatibility. All
@@ -329,12 +330,46 @@ static XS(dds_xs_dump)
     XSRETURN(1);
 }
 
+#define DDS_OPTION_LIST(X) \
+    X(DECLARE, "declare", "Declare") \
+    X(INDENT_COLS, "indentcols", "IndentCols") \
+    X(INDENT_KEYS, "indentkeys", "IndentKeys") \
+    X(VERBOSE, "verbose", "Verbose") \
+    X(DUMP_GLOB, "dumpglob", "DumpGlob") \
+    X(DEPARSE, "deparse", "Deparse") \
+    X(DEPARSE_GLOB, "deparseglob", "DeparseGlob") \
+    X(DEPARSE_FORMAT, "deparseformat", "DeparseFormat") \
+    X(CODE_STUB, "codestub", "CodeStub") \
+    X(FORMAT_STUB, "formatstub", "FormatStub") \
+    X(RLE, "rle", "Rle") \
+    X(PURITY, "purity", "Purity") \
+    X(DUAL_VARS, "dualvars", "DualVars") \
+    X(ECLIPSE_NAME, "eclipsename", "EclipseName") \
+    X(COMPRESS, "compress", "Compress") \
+    X(COMPRESSOR, "compressor", "Compressor") \
+    X(OPT_SPACE, "optspace", "OptSpace") \
+    X(TERSE, "terse", "Terse") \
+    X(INDENT, "indent", "Indent") \
+    X(TO, "fh", "To") \
+    X(DEPARSE_OPTS, "deparseopts", "DeparseOpts") \
+    X(FREEZER, "freezer", "Freezer") \
+    X(RESET_FREEZER, "resetfreezer", "ResetFreezer") \
+    X(IGNORE, "ignore", "Ignore") \
+    X(KEY_ORDER, "keyorder", "KeyOrder") \
+    X(SORT_KEYS, "sortkeys", "SortKeys") \
+    X(NAMES, "unames", "Names")
+
+typedef enum {
+#define OPTION_ENUM(id, key, name) DDS_OPT_ ## id,
+    DDS_OPTION_LIST(OPTION_ENUM)
+#undef OPTION_ENUM
+    DDS_OPT_COUNT
+} dds_option;
+
 static const char *dds_option_keys[] = {
-    "declare", "indentcols", "indentkeys", "verbose", "dumpglob", "deparse",
-    "deparseglob", "deparseformat", "codestub", "formatstub", "rle", "purity",
-    "dualvars", "eclipsename", "compress", "compressor", "optspace", "terse",
-    "indent", "fh", "deparseopts", "freezer", "resetfreezer", "ignore",
-    "keyorder", "sortkeys", "unames"
+#define OPTION_KEY(id, key, name) key,
+    DDS_OPTION_LIST(OPTION_KEY)
+#undef OPTION_KEY
 };
 
 static XS(dds_xs_option)
@@ -346,11 +381,11 @@ static XS(dds_xs_option)
     const char *key = dds_option_keys[ix];
     if (!items) croak("Missing dumper invocant");
     self = DDS_TEMP(newSVsv(dds_safe_self(aTHX_ ST(0))));
-    if (items > 1 && ix < 20) setvalue = DDS_TEMP(newSVsv(ST(1)));
+    if (items > 1 && ix < DDS_OPT_DEPARSE_OPTS) setvalue = DDS_TEMP(newSVsv(ST(1)));
     object = dds_context(aTHX_ self)->object;
     style = dds_hash(aTHX_ object, "style", TRUE);
     result = self;
-    if (ix == 26) { /* Names */
+    if (ix == DDS_OPT_NAMES) { /* Names */
         AV *names;
         if (items > 1) dds_set_names(aTHX_ object, items - 1, &ST(1));
         else if (GIMME_V == G_VOID) hv_stores(object, "unames", newRV_noinc((SV *)newAV()));
@@ -364,8 +399,8 @@ static XS(dds_xs_option)
         }
         else result = dds_hget(aTHX_ object, "unames");
     }
-    else if (ix == 24 || ix == 25) {
-        if (ix == 25) {
+    else if (ix == DDS_OPT_KEY_ORDER || ix == DDS_OPT_SORT_KEYS) {
+        if (ix == DDS_OPT_SORT_KEYS) {
             AV *args = (AV *)DDS_TEMP((SV *)newAV());
             I32 i;
             av_push(args, newSVpvs(""));
@@ -374,7 +409,7 @@ static XS(dds_xs_option)
         }
         else result = dds_key_order(aTHX_ self, items - 1, &ST(1));
     }
-    else if (ix == 23) { /* Ignore */
+    else if (ix == DDS_OPT_IGNORE) { /* Ignore */
         HV *ignore = dds_hash(aTHX_ style, "ignore", TRUE);
         I32 i;
         if (items == 1) {
@@ -402,14 +437,14 @@ static XS(dds_xs_option)
             else hv_delete_ent(ignore, policy, G_DISCARD, 0);
         }
     }
-    else if (ix == 22) {
+    else if (ix == DDS_OPT_RESET_FREEZER) {
         hv_stores(style, "freezer", newSVpvs("DDS_freeze"));
         hv_stores(style, "freeze_class", newRV_noinc((SV *)newHV()));
     }
-    else if (ix == 21 && items == 3) {
+    else if (ix == DDS_OPT_FREEZER && items == 3) {
         hv_store_ent(dds_hash(aTHX_ style, "freeze_class", TRUE), ST(1), newSVsv(ST(2)), 0);
     }
-    else if (ix == 21 && items == 1 && GIMME_V == G_ARRAY) {
+    else if (ix == DDS_OPT_FREEZER && items == 1 && GIMME_V == G_ARRAY) {
         HV *classes = dds_hash(aTHX_ style, "freeze_class", TRUE);
         HE *he;
         I32 count = 1;
@@ -422,7 +457,7 @@ static XS(dds_xs_option)
         }
         XSRETURN(count);
     }
-    else if (ix == 20) {
+    else if (ix == DDS_OPT_DEPARSE_OPTS) {
         if (items > 1) {
             SV *opts;
             if (SvROK(ST(1))) opts = newSVsv(ST(1));
@@ -444,8 +479,8 @@ static XS(dds_xs_option)
         else result = dds_hget(aTHX_ style, key);
     }
     else if (items > 1) {
-        HV *target = ix == 19 ? object : style;
-        if (ix == 18) {
+        HV *target = ix == DDS_OPT_TO ? object : style;
+        if (ix == DDS_OPT_INDENT) {
             SV *space = dds_hget(aTHX_ style, "optspace");
             if (SvIV(setvalue) == 0 && sv_len_utf8(space)) {
                 hv_stores(style, "last_optspace", newSVsv(space));
@@ -456,7 +491,7 @@ static XS(dds_xs_option)
         }
         hv_store(target, key, strlen(key), newSVsv(setvalue ? setvalue : ST(1)), 0);
     }
-    else result = dds_hget(aTHX_ ix == 19 ? object : style, key);
+    else result = dds_hget(aTHX_ ix == DDS_OPT_TO ? object : style, key);
     ST(0) = DDS_TEMP(newSVsv(result));
     XSRETURN(1);
 }
@@ -478,15 +513,16 @@ static XS(dds_xs_clone_skip)
 void
 dds_api_boot(pTHX)
 {
-    static const struct { const char *name; I32 selector; } options[] = {
-        {"Declare",0}, {"IndentCols",1}, {"IndentKeys",2}, {"Verbose",3},
-        {"DumpGlob",4}, {"Deparse",5}, {"DeparseGlob",6}, {"DeparseFormat",7},
-        {"CodeStub",8}, {"FormatStub",9}, {"Rle",10}, {"RLE",10}, {"Purity",11},
-        {"DualVars",12}, {"Dualvars",12}, {"EclipseName",13}, {"Compress",14},
-        {"Compressor",15}, {"OptSpace",16}, {"Terse",17}, {"Indent",18}, {"To",19},
-        {"DeparseOpts",20}, {"Freezer",21}, {"ResetFreezer",22}, {"Ignore",23},
-        {"KeyOrder",24}, {"Keyorder",24}, {"HashKeys",24}, {"Hashkeys",24},
-        {"SortKeys",25}, {"Sortkeys",25}, {"Names",26}
+    static const struct { const char *name; dds_option selector; } options[] = {
+#define OPTION_ENTRY(id, key, name) {name, DDS_OPT_ ## id},
+        DDS_OPTION_LIST(OPTION_ENTRY)
+#undef OPTION_ENTRY
+        {"RLE", DDS_OPT_RLE},
+        {"Dualvars", DDS_OPT_DUAL_VARS},
+        {"Keyorder", DDS_OPT_KEY_ORDER},
+        {"HashKeys", DDS_OPT_KEY_ORDER},
+        {"Hashkeys", DDS_OPT_KEY_ORDER},
+        {"Sortkeys", DDS_OPT_SORT_KEYS},
     };
     UV i;
     CV *cv;

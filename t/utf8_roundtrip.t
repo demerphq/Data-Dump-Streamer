@@ -81,4 +81,30 @@ for my $original (@values) {
     }
 }
 
+
+for my $class ("Policy::Wide\x{100}", "Policy::Latin\x{fc}") {
+    my $calls = 0;
+    my @objects = map { bless {n => $_}, $class } 1 .. 3;
+    my $d = Dump()->Names('value')->Freezer($class, sub {
+        ++$calls;
+        return {frozen => $_[0]{n}};
+    });
+    my $text = $d->Data(\@objects)->Out;
+    my $value;
+    my $copy = eval $text . '$value';
+    is($@, '', 'Unicode class freezer output evaluates');
+    is($calls, 3, 'Unicode class freezer and its cache select every object');
+    is_deeply($copy, [{frozen=>1}, {frozen=>2}, {frozen=>3}], 'Unicode class freezer replaces objects');
+    $calls = 0;
+    $d = Dump()->Names('value')->Freezer($class, sub { ++$calls; return undef });
+    $text = $d->Data(\@objects)->Out;
+    is($calls, 1, 'Unicode class skip cache disables an undef freezer');
+    $text = Dump()->Names('value')->Ignore($class, 1)->Data($objects[0])->Out;
+    like($text, qr/Ignored Obj/, 'Unicode class ignore policy is applied');
+    $calls = 0;
+    $text = Dump()->Names('value')->HashKeys($class, sub { ++$calls; return ['n'] })
+        ->Data($objects[0])->Out;
+    cmp_ok($calls, '>=', 2, 'Unicode class key-order callback runs in both passes');
+}
+
 done_testing;

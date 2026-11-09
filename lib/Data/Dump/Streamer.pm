@@ -11,7 +11,7 @@ use Exporter ();
 use IO::Handle ();
 use Symbol ();
 use Hash::Util qw(lock_keys lock_ref_keys lock_keys_plus lock_ref_keys_plus);
-use re qw(regexp_pattern is_regexp);
+use re ();
 
 our ($VERSION, $XS_VERSION, $HasPadWalker, $DEBUG);
 our (@ISA, @EXPORT, @EXPORT_OK, @EXPORT_FAIL, %EXPORT_TAGS);
@@ -101,10 +101,23 @@ BEGIN {
     );
 
     Data::Dump::Streamer->bootstrap($XS_VERSION);
+    if ($] >= 5.013006 && $] < 5.013010) {
+        # These development releases exposed flags that were not yet legal
+        # in regexp literals. Preserve the original compatibility rule.
+        *regex = sub {
+            return scalar re::regexp_pattern($_[0]) unless wantarray;
+            my ($pattern, $modifiers) = re::regexp_pattern($_[0]);
+            $modifiers =~ tr/dlua?//d if defined $modifiers;
+            return ($pattern, $modifiers);
+        };
+    }
+    elsif ($] >= 5.009004) {
+        *regex = \&re::regexp_pattern;
+    }
+    # Older interpreters use the regex XSUB installed by bootstrap above.
     $HasPadWalker= eval { require PadWalker; PadWalker->VERSION('0.99'); 1 };
 }
 $DEBUG= 0;
-*regex= \&re::regexp_pattern;
 *DDumper= \&Data::Dumper::Dumper;
 *_get_lexicals= \&_xs_get_lexicals;
 

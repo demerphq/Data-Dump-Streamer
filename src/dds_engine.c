@@ -1,3 +1,4 @@
+#define NEED_mg_findext
 #include "dds_engine.h"
 
 SV *
@@ -5,6 +6,13 @@ dds_hget(pTHX_ HV *hv, const char *key)
 {
     SV **svp = hv ? hv_fetch(hv, key, (I32)strlen(key), 0) : NULL;
     return svp ? *svp : &PL_sv_undef;
+}
+
+SV *
+dds_hget_sv(pTHX_ HV *hv, SV *key)
+{
+    HE *entry = hv ? hv_fetch_ent(hv, key, 0, 0) : NULL;
+    return entry ? HeVAL(entry) : &PL_sv_undef;
 }
 
 HV *
@@ -102,7 +110,7 @@ dds_backrefs(pTHX_ SV *sv)
 #else
     MAGIC *mg;
 # if PERL_VERSION >= 10
-    if (SvTYPE(sv) == SVt_PVHV && HvHasAUX((HV *)sv))
+    if (SvTYPE(sv) == SVt_PVHV && SvOOK(sv))
         return (SV *)HvAUX((HV *)sv)->xhv_backreferences;
 # endif
     mg = SvMAGICAL(sv) ? mg_find(sv, PERL_MAGIC_backref) : NULL;
@@ -486,10 +494,10 @@ dds_freeze(pTHX_ dds_ctx *ctx, SV *rv)
     HV *classes = dds_hash(aTHX_ style, "freeze_class", FALSE);
     HV *skip = dds_hash(aTHX_ ctx->object, "cache_skip_freeze", TRUE);
     HV *cache = dds_hash(aTHX_ ctx->object, "cache_freeze_class", TRUE);
-    SV *cached = dds_hget(aTHX_ cache, DDS_PV(class_name));
+    SV *cached = dds_hget_sv(aTHX_ cache, class_name);
     SV *choices[3];
     UV i;
-    if (SvTRUE(dds_hget(aTHX_ skip, DDS_PV(class_name)))) return &PL_sv_undef;
+    if (SvTRUE(dds_hget_sv(aTHX_ skip, class_name))) return &PL_sv_undef;
     if (SvOK(cached)) {
         SV *values = dds_invoke(aTHX_ ctx, cached, !SvROK(cached), G_ARRAY, 1, &rv);
         AV *list = (AV *)SvRV(values);
@@ -499,7 +507,7 @@ dds_freeze(pTHX_ dds_ctx *ctx, SV *rv)
         if (!proxy || !SvOK(*proxy)) av_store(list, 0, newSViv(0));
         return values;
     }
-    choices[0] = DDS_TEMP(newSVsv(dds_hget(aTHX_ classes, DDS_PV(class_name))));
+    choices[0] = DDS_TEMP(newSVsv(dds_hget_sv(aTHX_ classes, class_name)));
     choices[1] = DDS_TEMP(newSVsv(dds_hget(aTHX_ style, "freezer")));
     choices[2] = DDS_TEMP(newSVpvs("DDS_freeze"));
     for (i = 0; i < 3; i++) {

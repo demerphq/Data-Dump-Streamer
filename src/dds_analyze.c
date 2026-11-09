@@ -184,10 +184,10 @@ dds_ignored(pTHX_ dds_ctx *ctx, SV *target)
     HV *ignore = dds_hash(aTHX_ style, "ignore", FALSE);
     SV *address = DDS_TEMP(newSVpvf("#%" UVuf, PTR2UV(target)));
     SV *class_name = dds_class(aTHX_ target);
-    if (SvTRUE(dds_hget(aTHX_ ignore, DDS_PV(address)))) return TRUE;
+    if (SvTRUE(dds_hget_sv(aTHX_ ignore, address))) return TRUE;
     if (SvOK(class_name)) {
         SV *key = DDS_TEMP(newSVpvs(".")); DDS_CAT(key, class_name);
-        if (SvTRUE(dds_hget(aTHX_ ignore, DDS_PV(key)))) return TRUE;
+        if (SvTRUE(dds_hget_sv(aTHX_ ignore, key))) return TRUE;
     }
     return FALSE;
 }
@@ -218,7 +218,7 @@ dds_collect_lexicals(pTHX_ dds_ctx *ctx, SV *target, HV *lexrefs, HV *names, HV 
             HV *style = dds_hash(aTHX_ ctx->object, "style", FALSE);
             SV *format = dds_hget(aTHX_ style, "eclipsename");
             SV *args2[3], *new_name;
-            UV n = SvUV(dds_hget(aTHX_ used, DDS_PV(name))) + 1;
+            UV n = SvUV(dds_hget_sv(aTHX_ used, name)) + 1;
             hv_store_ent(used, name, newSVuv(n), 0);
             args2[0] = name; args2[1] = format; args2[2] = DDS_TEMP(newSVuv(n));
             new_name = dds_call(aTHX_ ctx, "Data::Dump::Streamer::_xs_eclipse_name", NULL, G_SCALAR, 3, args2);
@@ -406,7 +406,7 @@ dds_analyze(pTHX_ dds_ctx *ctx)
             hv_iterinit(lexrefs);
             while ((he = hv_iternext(lexrefs))) {
                 SV *address = hv_iterkeysv(he), *rv = HeVAL(he);
-                SV *lexname = dds_hget(aTHX_ lexnames, DDS_PV(address));
+                SV *lexname = dds_hget_sv(aTHX_ lexnames, address);
                 bool found = FALSE;
                 hv_store_ent(ctx->lexical_names, address, newSVsv(lexname), 0);
                 for (i = 0; i < ctx->root_count; i++) {

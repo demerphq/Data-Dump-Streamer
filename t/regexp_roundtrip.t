@@ -2,7 +2,7 @@ use 5.022;
 use strict;
 use warnings;
 use Test::More;
-use Data::Dump::Streamer qw(Dump);
+use Data::Dump::Streamer qw(Dump regex :undump);
 
 our $DUMP_INTERPOLATED;
 my @sources = (
@@ -69,6 +69,26 @@ for my $source ("a # a comment\nb", "a\tb", "a\rb", "a\0b", "\x{100}/\x{263a}") 
                "extended=$extended match preserved");
         }
     }
+}
+
+
+{
+    my $original = qr/a.b/im;
+    my ($pattern, $modifiers) = regex($original);
+    is($pattern, 'a.b', 'compatibility API returns the source pattern');
+    like($modifiers, qr/i/, 'compatibility API retains case-insensitive mode');
+    like($modifiers, qr/m/, 'compatibility API retains multiline mode');
+    ok(defined scalar regex($original), 'compatibility API supports scalar context');
+    ok(!scalar regex({}), 'compatibility API rejects non-regexps');
+    bless $original, 'DDSRegexpCompatibility';
+    my $text = Dump()->Names('value')->Data([$original, $original])->Out;
+    my $value;
+    my $copy = eval $text . '$value';
+    is($@, '', 'shared reblessed regexp output evaluates') or diag $text;
+    is(ref($copy->[0]), 'DDSRegexpCompatibility', 'regexp subclass survives');
+    is(Data::Dump::Streamer::refaddr($copy->[0]), Data::Dump::Streamer::refaddr($copy->[1]),
+       'regexp identity survives');
+    ok("AXB" =~ $copy->[0], 'restored reblessed regexp remains functional');
 }
 
 done_testing;

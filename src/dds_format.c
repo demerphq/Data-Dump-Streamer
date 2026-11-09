@@ -1,3 +1,4 @@
+#define NEED_utf8_to_uvchr_buf
 #include "dds_engine.h"
 
 static bool
@@ -398,10 +399,10 @@ dds_keys(pTHX_ dds_ctx *ctx, HV *hv, I32 pass, SV **thaw)
     bool tied = SvTIED_mg((SV *)hv, PERL_MAGIC_tied) != NULL;
     if (tied) dds_callback_guard(aTHX_ ctx);
     if (SvOK(class_name)) DDS_CAT(class_key, class_name);
-    sorter = dds_hget(aTHX_ sorters, DDS_PV(address));
+    sorter = dds_hget_sv(aTHX_ sorters, address);
     if (!SvTRUE(sorter)) {
         GV *method = NULL;
-        sorter = dds_hget(aTHX_ sorters, DDS_PV(class_key));
+        sorter = dds_hget_sv(aTHX_ sorters, class_key);
         if (!SvTRUE(sorter) && SvOK(class_name))
             method = gv_fetchmethod_autoload(SvSTASH((SV *)hv), "DDS_sortkeys", 0);
         if (method && GvCV(method)) sorter = DDS_TEMP(newRV_inc((SV *)GvCV(method)));
@@ -530,23 +531,33 @@ dds_hidden_keys(pTHX_ HV *hv)
     return keys;
 }
 
-SV *
-dds_regex(pTHX_ SV *rv)
+bool
+dds_is_regexp(pTHX_ SV *target)
 {
-    dSP;
-    I32 count;
-    SV *pattern, *mods, *out;
+#if PERL_VERSION >= 11
+    return SvTYPE(target) == SVt_REGEXP;
+#else
+    MAGIC *magic;
+    return SvTYPE(target) == SVt_PVMG && SvMAGICAL(target)
+        && (magic = mg_find(target, PERL_MAGIC_qr)) && magic->mg_obj;
+#endif
+}
+
+SV *
+dds_regex(pTHX_ dds_ctx *ctx, SV *rv)
+{
+    SV *values, *pattern, *mods, *out;
+    AV *parts;
     STRLEN len, i, width;
     const U8 *p;
     static const char *delimiters[] = {"/", "!", "%", "&", "<>", "{}", "\"", "#"};
     UV best = UV_MAX, chosen = 0, d;
-    PUSHMARK(SP); XPUSHs(rv); PUTBACK;
-    count = call_pv("re::regexp_pattern", G_ARRAY);
-    SPAGAIN;
-    if (count < 2) croak("Cannot inspect regexp");
-    mods = DDS_TEMP(newSVsv(POPs));
-    pattern = DDS_TEMP(newSVsv(POPs));
-    PUTBACK;
+    values = dds_call(aTHX_ ctx, "Data::Dump::Streamer::regex", NULL,
+                       G_ARRAY, 1, &rv);
+    parts = (AV *)SvRV(values);
+    if (av_len(parts) != 1) croak("Cannot inspect regexp");
+    pattern = *av_fetch(parts, 0, 0);
+    mods = *av_fetch(parts, 1, 0);
     p = (const U8 *)SvPV(pattern, len);
     /* In /x patterns a literal whitespace character and an escaped one
      * have different meanings. Compile the original string in that case. */

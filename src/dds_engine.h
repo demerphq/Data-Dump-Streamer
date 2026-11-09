@@ -5,6 +5,19 @@
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
+#include "../lib/Data/Dump/ppport.h"
+
+/* Older stashes expose byte names without a separate UTF-8 flag. */
+#ifndef HvNAMEUTF8
+#  define HvNAMEUTF8(stash) 0
+#endif
+#ifndef SvPAD_OUR
+#  define SvPAD_OUR(name) (SvFLAGS(name) & SVpad_OUR)
+#endif
+
+#ifndef PERL_MAGIC_qr
+#  define PERL_MAGIC_qr 'r'
+#endif
 
 /* XPerl exposes direct traversal for its compact hash layout. */
 #ifdef HvENTRY_LIMIT
@@ -146,6 +159,7 @@ typedef struct {
 } dds_result;
 
 SV *dds_hget(pTHX_ HV *hv, const char *key);
+SV *dds_hget_sv(pTHX_ HV *hv, SV *key);
 HV *dds_hash(pTHX_ HV *hv, const char *key, bool create);
 AV *dds_array(pTHX_ HV *hv, const char *key, bool create);
 SV *dds_call(pTHX_ dds_ctx *ctx, const char *sub, SV *invocant, I32 flags,
@@ -182,7 +196,8 @@ SV *dds_underef(pTHX_ SV *name);
 SV *dds_glob_name(pTHX_ GV *gv);
 AV *dds_keys(pTHX_ dds_ctx *ctx, HV *hv, I32 pass, SV **thaw);
 AV *dds_hidden_keys(pTHX_ HV *hv);
-SV *dds_regex(pTHX_ SV *rv);
+bool dds_is_regexp(pTHX_ SV *target);
+SV *dds_regex(pTHX_ dds_ctx *ctx, SV *rv);
 void dds_write(pTHX_ dds_ctx *ctx, SV *text);
 void dds_put(pTHX_ dds_ctx *ctx, const char *text);
 void dds_spaces(pTHX_ dds_ctx *ctx, IV count);
