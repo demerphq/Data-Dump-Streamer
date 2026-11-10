@@ -55,6 +55,7 @@ t/test_helper.pl
 t/tree.t
 t/usage.t
 t/utf8_roundtrip.t
+t/version_indexing.t
 t/xperl_class.t
 t/xs_api.t
 t/xs_engine.t

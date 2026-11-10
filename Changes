@@ -1,3 +1,7 @@
+3.001 - 2026-11-10
+
+Fix version assignments so PAUSE can index the distribution.
+
 3.00 - 2026-11-10
 
 Rewrite the dumping engine in C/XS, with AI assistance, for improved speed,
