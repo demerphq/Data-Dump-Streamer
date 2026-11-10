@@ -151,15 +151,24 @@ sub _compressor {
     return sqz($_[0], "usqz('", "')");
 }
 
-# Compress and Base64-encode a string, optionally wrapping the encoded bytes
-# in caller-provided prefix and suffix text.
+# Compress a private byte copy and Base64-encode it, tagging Unicode strings
+# so usqz can restore their UTF-8 flag. Optional text wraps the payload.
 sub sqz {
     require Compress::Zlib;
     require MIME::Base64;
-    my $res= Compress::Zlib::compress($_[0], 9);
+
+    my $value= $_[0];
+    my $unicode= utf8::is_utf8($value);
+    utf8::encode($value) if $unicode;
+    my $res= Compress::Zlib::compress($value, 9);
+    my $payload= MIME::Base64::encode($res, '');
+
+    # A colon cannot occur in legacy Base64 payloads. Keep byte strings
+    # untagged so their existing representation remains unchanged.
+    $payload= 'u:' . $payload if $unicode;
     return $_[1]
-        ? $_[1] . MIME::Base64::encode($res, "") . $_[2]
-        : MIME::Base64::encode($res, "");
+        ? $_[1] . $payload . $_[2]
+        : $payload;
 }
 
 # Decode and decompress a string emitted by sqz, loading the optional
@@ -167,7 +176,16 @@ sub sqz {
 sub usqz {
     require Compress::Zlib;
     require MIME::Base64;
-    return Compress::Zlib::uncompress(MIME::Base64::decode($_[0]));
+
+    my $payload= $_[0];
+    my $unicode= $payload =~ s/\Au://;
+    my $value= Compress::Zlib::uncompress(MIME::Base64::decode($payload));
+    if ($unicode && defined $value) {
+        utf8::decode($value)
+            or die "Invalid UTF-8 in compressed Unicode string";
+        utf8::upgrade($value);
+    }
+    return $value;
 }
 
 # Return copied catalogue rows ordered by minimum depth and canonical name for
@@ -1465,6 +1483,10 @@ to be an EXPR that will evaluate back to the original string.
 By default DDS will use L<Compress::Zlib> in conjunction with
 L<MIME::Base64> to do compression and encoding, and exposes the
 'usqz' subroutine for handling the decoding and decompression.
+
+The default compressor supports byte strings and Unicode strings, preserving
+both their characters and their UTF-8 flag without changing the input.
+Compressed byte-string dumps from older releases remain readable.
 
 The abbreviated name was chosen as when using the default compressor
 every string will be represented by a string like

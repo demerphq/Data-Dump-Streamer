@@ -79,6 +79,9 @@ Retain UTF-8 encoding when copying escaped wide regexp characters into
 generated source, so reconstruction does not reinterpret individual bytes.
 Load compression dependencies lazily during decompression as well as
 compression, allowing generated dumps to run in a fresh interpreter.
+Support compressed Unicode strings with tagged UTF-8 payloads, preserving
+the UTF-8 flag even for empty, ASCII-only and Latin-1 strings. Compress a
+private copy so input flags are not changed. Keep byte payloads compatible.
 Preserve UTF-8 in quoted glob names, including Unicode package names and
 shortened main-package names, so reconstruction selects the original glob.
 
