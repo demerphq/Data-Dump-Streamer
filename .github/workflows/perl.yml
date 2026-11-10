@@ -48,6 +48,35 @@ jobs:
           make
           make test
 
+  cygwin:
+    name: Cygwin Perl
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Keep checkout line endings suitable for Cygwin
+        shell: pwsh
+        run: git config --global core.autocrlf input
+      - uses: actions/checkout@v6
+      - uses: cygwin/cygwin-install-action@v7
+        with:
+          packages: |
+            gcc-core
+            gcc-g++
+            make
+            perl
+            perl-ExtUtils-MakeMaker
+            perl-Scalar-List-Utils
+            perl-Test-Simple
+      - name: Configure and test with Cygwin Perl
+        shell: D:\cygwin\bin\bash.exe --noprofile --norc -eo pipefail -o igncr {0}
+        run: |
+          export PATH=/usr/bin:/bin
+          perl -e 'die "Expected Cygwin Perl\n" unless $^O eq "cygwin"'
+          perl -V
+          perl Makefile.PL DDS
+          make -j2
+          make test
+
   refcounted-stack:
     name: Development Perl with refcounted stack
     runs-on: ubuntu-latest

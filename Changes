@@ -1,3 +1,7 @@
+Unreleased
+
+Fix compilation on Cygwin by declaring private XSUBs with XS_INTERNAL.
+
 3.001 - 2026-11-10
 
 Fix version assignments so PAUSE can index the distribution.
