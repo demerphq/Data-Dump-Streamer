@@ -1,4 +1,4 @@
-2.42
+3.00
 
 Replace the Perl graph analyzer and emitter with a mandatory XS engine.
 Keep breadth-first canonical names and sparse identity tracking, followed
