@@ -1,92 +1,14 @@
-2.42
+3.00 - 2026-11-10
 
-Replace the Perl graph analyzer and emitter with a mandatory XS engine.
-Keep breadth-first canonical names and sparse identity tracking, followed
-by depth-first output and typed fixups. Move constructors, options,
-dumping entry points, and callback dispatch into XS as well. Remove the
-Perl printer classes, duplicate sorters, and obsolete compatibility shims.
-Split reference emission into focused resolution, construction and
-completion helpers. Use heap frames for deep graphs and protect borrowed
-values when user callbacks can run.
+Rewrite the dumping engine in C/XS, with AI assistance, for improved speed,
+correctness and compatibility with Perl's refcounted stack. Improve Unicode
+and regexp handling, and add experimental support for XPerl class objects.
 
-Add make tidy, tidy-c and tidy-perl using shared clang-format and
-perltidy profiles. Expand inline C statements and loops, clarify dump
-entry-point selection, and document ownership and traversal invariants.
-Split array/hash analysis, queue-item processing and closure-root discovery
-into helpers so the main breadth-first pass shows its overall flow.
-Document each native function, XS utility and retained Perl facade helper,
-with an overview of graph processing and its major phases.
-Clarify empty-capture and format-fallback comments. Expand the remaining
-XS control flow and remove obsolete commented-out experiments.
-Keep the reusable benchmark under maint/ and remove completed planning
-material.
+Require Perl 5.18 or newer and a C compiler. Replace Module::Build with
+ExtUtils::MakeMaker.
 
-Use ExtUtils::MakeMaker for configuration, compilation, testing and
-installation. Preserve DDS/NODDS alias selection and native header
-dependencies. Keep the DDS shortcut documentation and a version assignment
-readable by installation tools. Remove Module::Build and ExtUtils::CBuilder requirements.
-
-Keep catalogue addresses opaque and use them only as lookup keys. Do not
-attach weak identity witnesses or back-reference magic to input values.
-Retain active callback work and deferred glob values explicitly. Changes
-to the graph during dumping are unsupported and handled on a best-effort
-basis; call Data again after changing the graph structure.
-
-Preserve sharing between glob slots and ordinary graph locations,
-including competing deferred globs. Canonical names now honor numeric
-minimum depths. Dumps involving glob scalar slots may use shallower
-ordinary locations or spell out the SCALAR slot explicitly.
-
-Run postdump hooks once per original object after graph serialization and
-fixups finish, including distinct objects sharing one proxy and chained
-proxies. Snapshot the selected original referent without an extra tied
-FETCH. Clean up pending invocants if output or a hook throws.
-
-Preserve XPerl class storage through the class snapshot helpers, including
-ordinary blessed payloads, inherited and role fields, sharing, aliases,
-cycles, weak references, and readonly fields. Resolve field replacements
-before hydration and defer class thaw methods until storage is attached.
-Scope helper variables independently of caller code and retain UTF-8 class
-names. Use XPerl's direct hash traversal API for compact hash layouts.
-
-The native emitter imposes a traversal-depth limit of 16384 scalar and
-referent visits, approximately 8192 nested containers. The previous Perl
-engine had no explicit limit. Dumper objects are no longer cloned into
-ithreads; construct a new dumper in each child interpreter.
-
-Require Perl 5.18 or newer, the oldest version passing the compatibility
-CI assessment. Test every stable series from 5.18 through 5.44,
-a development Perl with the refcounted stack, and ithreads. Remove the
-B::Utils, Text::Balanced, Text::Abbrev, and ExtUtils::Depends dependencies.
-
-Route regexp inspection through the existing compatibility API. Keep
-interpreter-specific regexp, pad and hash storage handling behind
-compatibility helpers. Apply regenerated Devel::PPPort shims to every
-native source file.
-
-Preserve Unicode class policy keys for explicit freezers, selected and
-skipped freezer caches, ignore policies, and key-order callbacks. Define
-option selectors and method registration together with named constants.
-
-Preserve UTF-8 flags for ASCII and Latin-1 scalar values with Unicode
-escapes, including empty Unicode strings. Harden regexp interpolation
-and delimiter escaping. Preserve distinct dualvar numeric values during
-array run-length encoding, and defer weakening until graph fixups finish.
-Preserve literal Unicode pattern whitespace in extended regexps instead
-of turning ignored characters into required hex escapes.
-Use the fixed Unicode whitespace set without private regexp-parser macros.
-Retain UTF-8 encoding when copying escaped wide regexp characters into
-generated source, so reconstruction does not reinterpret individual bytes.
-Load compression dependencies lazily during decompression as well as
-compression, allowing generated dumps to run in a fresh interpreter.
-Support compressed Unicode strings with tagged UTF-8 payloads, preserving
-the UTF-8 flag even for empty, ASCII-only and Latin-1 strings. Compress a
-private copy so input flags are not changed. Keep byte payloads compatible.
-Preserve UTF-8 in quoted glob names, including Unicode package names and
-shortened main-package names, so reconstruction selects the original glob.
-
-Apply the preferred source formatting and fix serialization of the global
-stash. Add a regression test for dumping the global stash.
+There is no pure-Perl version. Please don't upgrade if you need pure-Perl
+support.
 
 2.41
 
