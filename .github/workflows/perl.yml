@@ -62,6 +62,7 @@ jobs:
           packages: |
             gcc-core
             gcc-g++
+            libcrypt-devel
             make
             perl
             perl-ExtUtils-MakeMaker
