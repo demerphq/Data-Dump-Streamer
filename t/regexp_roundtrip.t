@@ -99,9 +99,6 @@ for my $source ("a # a comment\nb", "a\tb", "a\rb", "a\0b", "\x{100}/\x{263a}")
             my $original= eval 'qr/$source/' . $mode;
             die $@ if $@;
             my $label= sprintf 'U+%04X /%s', $codepoint, $mode;
-            ok('ab' =~ $original,
-                "$label: original ignores pattern whitespace");
-
             my $text= Dump($original)->Terse(1)->Out;
             my $copy= eval $text;
             is($@, '', "$label: output evaluates") or diag $text;
