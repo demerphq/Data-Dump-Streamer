@@ -17,7 +17,7 @@ our ($VERSION, $XS_VERSION, $HasPadWalker, $DEBUG);
 our (@ISA, @EXPORT, @EXPORT_OK, @EXPORT_FAIL, %EXPORT_TAGS);
 
 BEGIN {
-    $VERSION= '3.001';
+    $VERSION= '3.002';
     $XS_VERSION= eval $VERSION;
     @ISA= qw(Exporter DynaLoader);
     @EXPORT= qw(Dump DumpLex DumpVars);
@@ -388,7 +388,7 @@ use B::Deparse;
 our @ISA= qw(B::Deparse);
 my %cache;
 
-our $VERSION= '3.001';
+our $VERSION= '3.002';
 if ($VERSION ne $Data::Dump::Streamer::VERSION) {
     die
         "Incompatible Data::Dump::Streamer::Deparser v$VERSION vs Data::Dump::Streamer v$Data::Dump::Streamer::VERSION";

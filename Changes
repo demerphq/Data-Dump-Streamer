@@ -1,6 +1,7 @@
-Unreleased
+3.002 - 2026-11-11
 
 Fix compilation on Cygwin by declaring private XSUBs with XS_INTERNAL.
+Remove compiler warnings in the XS helpers and add Cygwin CI coverage.
 
 3.001 - 2026-11-10
 
