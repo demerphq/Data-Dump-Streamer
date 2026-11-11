@@ -47,7 +47,7 @@
             "Hash::Util" : "0",
             "IO::Handle" : "0",
             "Symbol" : "0",
-            "perl" : "5.018",
+            "perl" : "5.012",
             "re" : "0",
             "strict" : "0",
             "vars" : "0",

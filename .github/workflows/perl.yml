@@ -16,6 +16,9 @@ jobs:
       fail-fast: false
       matrix:
         perl:
+          - '5.12'
+          - '5.14'
+          - '5.16'
           - '5.18'
           - '5.20'
           - '5.22'
@@ -38,7 +41,7 @@ jobs:
       - name: Report interpreter
         run: perl -V
       - name: Install build and test dependencies
-        run: cpanm --verbose PadWalker Algorithm::Diff
+        run: cpanm --verbose ExtUtils::MakeMaker Scalar::Util PadWalker Algorithm::Diff
       - name: Install optional JSON test dependency
         continue-on-error: true
         run: cpanm --verbose Cpanel::JSON::XS
