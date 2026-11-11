@@ -8,7 +8,7 @@
       make install
 ```
 
-Perl 5.18 or newer and a functional C compiler are required.
+Perl 5.12 or newer and a functional C compiler are required.
 Graph analysis and Perl source emission use a mandatory XS engine.
 Construction, options, entry points, and callback dispatch also use XS.
 Perl supplies loading/export glue and integration with B::Deparse,

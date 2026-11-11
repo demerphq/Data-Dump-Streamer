@@ -256,6 +256,21 @@ static void dds_set_names(pTHX_ HV *object, I32 count, SV **args)
     hv_stores(object, "unames", newRV_inc((SV *)names));
 }
 
+/* Match class policies to the byte names used by pre-5.16 stashes without
+ * changing the caller's class-name scalar. Newer stashes retain UTF-8 flags.
+ */
+static SV *dds_policy_class(pTHX_ SV *value)
+{
+#if PERL_VERSION < 16
+    SV *name = DDS_TEMP(newSVsv(value));
+
+    SvUTF8_off(name);
+    return name;
+#else
+    return value;
+#endif
+}
+
 /* Build a mortal policy key: an address key for a reference, or a Unicode-
  * preserving class/default key for a string.
  */
@@ -268,7 +283,7 @@ static SV *dds_policy_key(pTHX_ SV *value)
 
     key = DDS_TEMP(newSVpvs("."));
     if (SvOK(value))
-        sv_catsv(key, value);
+        sv_catsv(key, dds_policy_class(aTHX_ value));
     return key;
 }
 
@@ -648,7 +663,8 @@ XS_INTERNAL(dds_xs_option)
         hv_stores(style, "freezer", newSVpvs("DDS_freeze"));
         hv_stores(style, "freeze_class", newRV_noinc((SV *)newHV()));
     } else if (ix == DDS_OPT_FREEZER && items == 3) {
-        hv_store_ent(dds_hash(aTHX_ style, "freeze_class", TRUE), ST(1), newSVsv(ST(2)), 0);
+        hv_store_ent(dds_hash(aTHX_ style, "freeze_class", TRUE), dds_policy_class(aTHX_ ST(1)),
+                     newSVsv(ST(2)), 0);
     } else if (ix == DDS_OPT_FREEZER && items == 1 && GIMME_V == G_ARRAY) {
         HV *classes = dds_hash(aTHX_ style, "freeze_class", TRUE);
         HE *he;
