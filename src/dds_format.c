@@ -39,7 +39,8 @@ SV *dds_qquote(pTHX_ SV *value)
     STRLEN len, offset = 0, chars = 0;
     const U8 *p = (const U8 *)SvPV(value, len);
     SV *out = newSVpvs("\"");
-    bool force_unicode = SvUTF8(value);
+    /* Older Perls use a char-sized bool that cannot hold SVf_UTF8. */
+    bool force_unicode = cBOOL(SvUTF8(value));
 
     /* A Latin-1-only UTF-8 value needs a Unicode escape to keep its flag
      * when the generated literal is evaluated. Empty strings need a seed. */
@@ -56,19 +57,11 @@ SV *dds_qquote(pTHX_ SV *value)
             }
             i += width;
         }
-#if PERL_VERSION >= 16
         if (!len) {
             SvREFCNT_dec(out);
             return DDS_TEMP(newSVpvs("substr(\"\\N{U+100}\",0,0)"));
         }
-#endif
     }
-
-#if PERL_VERSION < 16
-    /* These parsers do not force UTF-8 for Latin-1 Unicode escapes. */
-    if (force_unicode)
-        sv_setpvs(out, "do { my $s = \"");
-#endif
 
     while (offset < len) {
         STRLEN width = 1;
@@ -117,10 +110,6 @@ SV *dds_qquote(pTHX_ SV *value)
     }
 
     sv_catpvs(out, "\"");
-#if PERL_VERSION < 16
-    if (force_unicode)
-        sv_catpvs(out, "; utf8::upgrade($s); $s }");
-#endif
     return DDS_TEMP(out);
 }
 
