@@ -335,7 +335,7 @@ static SV *dds_key_order(pTHX_ SV *self, I32 count, SV **args)
 /* Implement the public constructor, returning a newly initialized dumper for
  * the requested class.
  */
-static XS(dds_xs_new)
+XS_INTERNAL(dds_xs_new)
 {
     dXSARGS;
     if (!items)
@@ -347,7 +347,7 @@ static XS(dds_xs_new)
 /* Normalize the invocant and, for the working-self variant, isolate a
  * reentrant operation before returning it to Perl.
  */
-static XS(dds_xs_safe_self)
+XS_INTERNAL(dds_xs_safe_self)
 {
     dXSARGS;
     SV *self;
@@ -364,7 +364,7 @@ static XS(dds_xs_safe_self)
 /* Implement Data and Out, forwarding arguments and Perl context and unpacking
  * list-context output chunks.
  */
-static XS(dds_xs_io)
+XS_INTERNAL(dds_xs_io)
 {
     dXSARGS;
     SV *self, *result;
@@ -393,7 +393,7 @@ static XS(dds_xs_io)
 /* Implement the capture-only entry points, replacing roots and returning the
  * working dumper for chaining.
  */
-static XS(dds_xs_capture)
+XS_INTERNAL(dds_xs_capture)
 {
     dXSARGS;
     SV *self;
@@ -416,7 +416,7 @@ typedef enum {
 /* Dispatch Dump, Dumper, DumpVars and DumpLex, handling invocants, naming,
  * scalar capture and context-sensitive output.
  */
-static XS(dds_xs_dump)
+XS_INTERNAL(dds_xs_dump)
 {
     dXSARGS;
     I32 first = 0, gimme = GIMME_V;
@@ -557,7 +557,7 @@ static const char *dds_option_keys[] = {
 /* Implement option getters and setters, including context-sensitive list
  * results and options with specialized validation or storage.
  */
-static XS(dds_xs_option)
+XS_INTERNAL(dds_xs_option)
 {
     dXSARGS;
     I32 ix = CvXSUBANY(cv).any_i32;
@@ -711,7 +711,7 @@ static XS(dds_xs_option)
 /* Provide the non-pure output placeholder by returning its first argument, or
  * undef when none was supplied.
  */
-static XS(dds_xs_alias_to)
+XS_INTERNAL(dds_xs_alias_to)
 {
     dXSARGS;
     ST(0) = items ? ST(0) : &PL_sv_undef;
@@ -721,7 +721,7 @@ static XS(dds_xs_alias_to)
 /* Exclude dumper objects from ithread cloning because their native traversal
  * state belongs to one interpreter.
  */
-static XS(dds_xs_clone_skip)
+XS_INTERNAL(dds_xs_clone_skip)
 {
     dXSARGS;
     PERL_UNUSED_VAR(items);
