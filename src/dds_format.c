@@ -56,11 +56,19 @@ SV *dds_qquote(pTHX_ SV *value)
             }
             i += width;
         }
+#if PERL_VERSION >= 16
         if (!len) {
             SvREFCNT_dec(out);
             return DDS_TEMP(newSVpvs("substr(\"\\N{U+100}\",0,0)"));
         }
+#endif
     }
+
+#if PERL_VERSION < 16
+    /* These parsers do not force UTF-8 for Latin-1 Unicode escapes. */
+    if (force_unicode)
+        sv_setpvs(out, "do { my $s = \"");
+#endif
 
     while (offset < len) {
         STRLEN width = 1;
@@ -109,6 +117,10 @@ SV *dds_qquote(pTHX_ SV *value)
     }
 
     sv_catpvs(out, "\"");
+#if PERL_VERSION < 16
+    if (force_unicode)
+        sv_catpvs(out, "; utf8::upgrade($s); $s }");
+#endif
     return DDS_TEMP(out);
 }
 
