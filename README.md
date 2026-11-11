@@ -29,7 +29,7 @@ Optional dependencies:
 - Algorithm::Diff and Cpanel::JSON::XS enable additional test coverage.
 - Compress::Zlib and MIME::Base64 enable compressed scalar output.
 
-CI tests every stable Perl series from 5.18 through 5.44, plus a development
+CI tests every stable Perl series from 5.12 through 5.44, plus a development
 Perl built with the refcounted stack and a separate threaded build.
 
 ## DEVELOPMENT

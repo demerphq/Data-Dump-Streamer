@@ -16,6 +16,9 @@ jobs:
       fail-fast: false
       matrix:
         perl:
+          - '5.12'
+          - '5.14'
+          - '5.16'
           - '5.18'
           - '5.20'
           - '5.22'
@@ -38,7 +41,7 @@ jobs:
       - name: Report interpreter
         run: perl -V
       - name: Install build and test dependencies
-        run: cpanm --verbose PadWalker Algorithm::Diff
+        run: cpanm --verbose ExtUtils::MakeMaker Scalar::Util PadWalker Algorithm::Diff
       - name: Install optional JSON test dependency
         continue-on-error: true
         run: cpanm --verbose Cpanel::JSON::XS
@@ -46,6 +49,36 @@ jobs:
         run: |
           perl Makefile.PL DDS
           make
+          make test
+
+  cygwin:
+    name: Cygwin Perl
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Keep checkout line endings suitable for Cygwin
+        shell: pwsh
+        run: git config --global core.autocrlf input
+      - uses: actions/checkout@v6
+      - uses: cygwin/cygwin-install-action@v7
+        with:
+          packages: |
+            gcc-core
+            gcc-g++
+            libcrypt-devel
+            make
+            perl
+            perl-ExtUtils-MakeMaker
+            perl-Scalar-List-Utils
+            perl-Test-Simple
+      - name: Configure and test with Cygwin Perl
+        shell: D:\cygwin\bin\bash.exe --noprofile --norc -eo pipefail -o igncr {0}
+        run: |
+          export PATH=/usr/bin:/bin
+          perl -e 'die "Expected Cygwin Perl\n" unless $^O eq "cygwin"'
+          perl -V
+          perl Makefile.PL DDS
+          make -j2
           make test
 
   refcounted-stack:
@@ -57,11 +90,31 @@ jobs:
       - uses: shogo82148/actions-setup-perl@v1
         with:
           perl-version: '5.44'
-      - name: Build the development interpreter
+      - name: Initialize perlbrew
+        id: perlbrew
         run: |
           cpanm --verbose App::perlbrew
           perlbrew init
+          echo "platform=${ImageOS}-$(gcc -dumpfullversion -dumpversion)" >> "$GITHUB_OUTPUT"
+      - name: Restore the development interpreter
+        id: rc-perl
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/perl5/perlbrew/perls/dds-rc-stack
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.perlbrew.outputs.platform }}-dds-rc-stack-${{ hashFiles('.github/workflows/perl.yml') }}
+      - name: Build the development interpreter
+        if: steps.rc-perl.outputs.cache-hit != 'true'
+        run: |
           perlbrew install --as dds-rc-stack --debug -j 4 -Dusedevel -Accflags='-DPERL_RC_STACK -DDEBUG_LEAKING_SCALARS' perl-5.45.4
+      - name: Verify the refcounted stack
+        run: |
+          "$HOME/perl5/perlbrew/perls/dds-rc-stack/bin/perl" -e 'die "Refcounted stack is disabled\n" unless Internals::stack_refcounted() & 1'
+      - name: Cache the development interpreter
+        if: steps.rc-perl.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/perl5/perlbrew/perls/dds-rc-stack
+          key: ${{ steps.rc-perl.outputs.cache-primary-key }}
       - name: Install dependencies and test with the refcounted stack
         shell: bash
         run: |
@@ -69,7 +122,6 @@ jobs:
           source "$HOME/perl5/perlbrew/etc/bashrc"
           perlbrew use dds-rc-stack
           perl -V
-          perl -e 'die "Refcounted stack is disabled\n" unless Internals::stack_refcounted() & 1'
           perl "$dds_cpanm" --verbose PadWalker Algorithm::Diff
           if ! perl "$dds_cpanm" --verbose Cpanel::JSON::XS; then
             echo 'Optional JSON dependency installation failed; its tests skip if the module is unavailable.'
@@ -79,15 +131,19 @@ jobs:
           PERL_DESTRUCT_LEVEL=2 make test
 
   threaded:
-    name: Perl 5.44 with ithreads
+    name: Perl ${{ matrix.perl }} with ithreads
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        perl: ['5.12', '5.44']
     steps:
       - uses: actions/checkout@v6
       - uses: shogo82148/actions-setup-perl@v1
         with:
-          perl-version: '5.44'
+          perl-version: ${{ matrix.perl }}
           multi-thread: true
-      - run: cpanm --verbose PadWalker Algorithm::Diff
+      - run: cpanm --verbose ExtUtils::MakeMaker Scalar::Util PadWalker Algorithm::Diff
       - name: Install optional JSON test dependency
         continue-on-error: true
         run: cpanm --verbose Cpanel::JSON::XS
